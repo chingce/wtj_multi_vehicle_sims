@@ -21,21 +21,21 @@ class IDMController(Controller):
 class TimeGapController(Controller):
     name = "TG"
 
-    def __init__(self, alpha=1.0, tau=2.5, gmin=15, lam=.5):
+    def __init__(self, alpha=1.0, tau=2.5, gmin=15, lam=0.1):
         self.alpha = alpha
         self.tau = tau
         self.gmin = gmin
         self.lam = lam
 
     def cmd_accel(self, sn, vn, sndot):
-        return self.alpha * (sn - self.tau*vn - self.gmin) + self.lam*sndot
+        return min(1.5, max(-3,self.alpha * (sn - self.tau*vn - self.gmin) + self.lam*sndot))
 
 class WTJController(Controller):
     name = "WTJ"
 
     def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=0.5, c=0.1):
-        self.time_gap_controller_max = TimeGapController(alpha, tau_max, gmin, lam)
-        self.time_gap_controller_min = TimeGapController(alpha, tau_min, gmin, lam)
+        self.time_gap_controller_max = min(1.5, max(-3,self.alpha * (sn - self.tau_max*vn - self.gmin) + min(0,self.lam*sndot)))
+        self.time_gap_controller_min = min(1.5, max(-3,self.alpha * (sn - self.tau_min*vn - self.gmin) + min(0,self.lam*sndot)))
         self.c = c
 
     def cmd_accel(self, sn, vn, sndot):
@@ -46,7 +46,7 @@ class WTJController(Controller):
             return al
         
         a_star = self.c * sqrt(1/(vn + 0.25)) - (self.c * sqrt(1/(30 + 0.25)))
-        return min(max(al, a_star), au)
+        return min(1.5, max(-3,min(max(al, a_star), au)))
 
 
 # Controllers by name, for picking one from a string (e.g. on the command line)
