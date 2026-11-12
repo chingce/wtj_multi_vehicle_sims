@@ -34,13 +34,11 @@ class WTJController(Controller):
     name = "WTJ"
 
     def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=0.5, c=0.1):
-        self.time_gap_controller_max = min(1.5, max(-3,self.alpha * (sn - self.tau_max*vn - self.gmin) + min(0,self.lam*sndot)))
-        self.time_gap_controller_min = min(1.5, max(-3,self.alpha * (sn - self.tau_min*vn - self.gmin) + min(0,self.lam*sndot)))
         self.c = c
 
     def cmd_accel(self, sn, vn, sndot):
-        al = self.time_gap_controller_max.cmd_accel(sn, vn, sndot)
-        au = self.time_gap_controller_min.cmd_accel(sn, vn, sndot)
+        al = min(1.5, max(-3,self.alpha * (sn - self.tau_max*vn - self.gmin) + min(0,self.lam*sndot)))
+        au = min(1.5, max(-3,self.alpha * (sn - self.tau_min*vn - self.gmin) + min(0,self.lam*sndot)))
         a_star = 0
         if vn <= 0:
             return al
