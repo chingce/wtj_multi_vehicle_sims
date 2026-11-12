@@ -10,13 +10,42 @@ class Controller(ABC):
         pass
 
 class IDMController(Controller):
+    """
+    Intelligent Driver Model (Treiber, Hennecke & Helbing, 2000).
+
+        a = a_max * [1 - (v / v0)^delta - (s* / s)^2]
+        s* = s0 + max(0, v*T + v*dv / (2*sqrt(a_max*b)))
+
+    with s the gap to the leader, v the ego speed, and dv = v - v_lead the
+    approach rate (positive when closing in). Defaults are the typical values
+    from https://en.wikipedia.org/wiki/Intelligent_driver_model.
+
+    v0:    desired speed (m/s)
+    T:     safe time headway (s)
+    a_max: maximum acceleration (m/s^2)
+    b:     comfortable deceleration (m/s^2, positive)
+    delta: acceleration exponent
+    s0:    minimum gap / jam distance (m)
+    """
     name = "IDM"
 
-    def __init__(self):
-        raise NotImplementedError("TBD")
+    def __init__(self, v0=30.0, T=1.5, a_max=0.73, b=1.67, delta=4.0, s0=2.0):
+        self.v0 = v0
+        self.T = T
+        self.a_max = a_max
+        self.b = b
+        self.delta = delta
+        self.s0 = s0
 
     def cmd_accel(self, sn, vn, sndot):
-        raise NotImplementedError("TBD")
+        v = max(vn, 0.0)   # a fractional delta can't take a negative base
+        dv = -sndot        # sndot is v_lead - v_ego; IDM wants v_ego - v_lead
+        # The max(0, .) keeps s* from going below s0 when the leader pulls away
+        # fast, which would otherwise make the interaction term brake harder
+        # (it's squared). Treiber & Kesting use the same guard.
+        s_star = self.s0 + max(0.0, v * self.T + v * dv / (2 * sqrt(self.a_max * self.b)))
+        s = max(sn, 1e-3)  # gap of zero or less (collision) -> maximal braking, not a crash
+        return self.a_max * (1 - (v / self.v0) ** self.delta - (s_star / s) ** 2)
 
 class TimeGapController(Controller):
     name = "TG"
@@ -50,7 +79,7 @@ class WTJController(Controller):
 
 
 # Controllers by name, for picking one from a string (e.g. on the command line)
-CONTROLLERS = {cls.name: cls for cls in (TimeGapController, WTJController)}
+CONTROLLERS = {cls.name: cls for cls in (TimeGapController, WTJController, IDMController)}
 
 
 def controller_param_names(name):

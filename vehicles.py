@@ -53,25 +53,34 @@ def sample_weight():
 
     return weight
 
+TAU_ACCEL_REF = 1 / 3.5   # s, throttle/powertrain lag for the reference car
+TAU_BRAKE_REF = 1 / 1.5   # s, brake lag for the reference car
 
-def dynamics(cmd_accel, accel, mass=None, reference_mass=1500, variable_mass=False):
+def dynamics(cmd_accel, accel, mass=None, reference_mass=1500.0, dt=0.05,
+             alpha=0.5, variable_mass=False, accel_limits=(-3.0, 1.5)):
     """
-    CarComplexSimulink -- discretized (also I think wrong...)
+    First-order acceleration lag, a/(s+a), discretized exactly (ZOH).
 
-    With variable_mass enabled, scale commanded acceleration by mass so heavier
-    vehicles respond more slowly than the reference passenger car.
+    Physical model: actuator force changes at a rate proportional to the
+    acceleration error, dF/dt = k (a_cmd - a), with F = m a. That gives
+    tau = m / k. With actuator authority scaling as k ~ m^(1 - alpha),
+        tau(m) = tau_ref * (m / m_ref)^alpha
+    alpha=0: mass has no effect; alpha=1: same actuator, heavier body.
+
+    accel_limits: optional (a_min, a_max) in m/s^2 for this vehicle
+    (e.g. from power/mass and braking capability). This is saturation,
+    not a gain change.
     """
-    effective_cmd_accel = cmd_accel
+    if accel_limits is not None:
+        cmd_accel = np.clip(cmd_accel, *accel_limits)
+
+    mass_ratio = 1.0
     if variable_mass:
         if mass is None:
             raise ValueError("mass is required when variable_mass=True")
-        mass_factor = reference_mass / mass
-        mass_factor = np.clip(mass_factor, 0.2, 1.5)
-        effective_cmd_accel = cmd_accel * mass_factor
+        mass_ratio = (mass / reference_mass) ** alpha
 
-    if effective_cmd_accel >= 0:
-        accel = .8395 * accel + .1605 * effective_cmd_accel
-    else:
-        accel = .9277 * accel + .0723 * effective_cmd_accel
+    tau = (TAU_ACCEL_REF if cmd_accel >= 0 else TAU_BRAKE_REF) * mass_ratio
+    phi = np.exp(-dt / tau)  # exact ZOH pole; equals .8395 / .9277 at m_ref
 
-    return accel
+    return phi * accel + (1 - phi) * cmd_accel

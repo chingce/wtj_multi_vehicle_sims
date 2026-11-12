@@ -21,7 +21,7 @@ VARIABLE_MASS_OUTPUT_DIR = ROOT / "variable_mass_results"
 PLOTS_DIR = ROOT / "plots"
 RESULTS_DIR = ROOT / "results"
 
-TYPE_COLORS = {"lead": "green", "WTJ": "blue", "TG": "red"}
+TYPE_COLORS = {"lead": "green", "WTJ": "blue", "TG": "red", "IDM": "orange"}
 
 
 def vehicle_color(i, platoon):

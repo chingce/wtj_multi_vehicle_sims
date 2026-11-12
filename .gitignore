@@ -2,3 +2,4 @@
 __pycache__/
 bags/*.bag
 variable_mass_results/plots/
+*.ipynb
