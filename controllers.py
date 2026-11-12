@@ -34,6 +34,11 @@ class WTJController(Controller):
     name = "WTJ"
 
     def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=0.5, c=0.1):
+        self.alpha = alpha
+        self.tau_min = tau_min
+        self.tau_max = tau_max
+        self.gmin = gmin
+        self.lam = lam
         self.c = c
 
     def cmd_accel(self, sn, vn, sndot):
