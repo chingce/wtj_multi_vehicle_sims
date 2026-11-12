@@ -17,6 +17,7 @@ from sim import sim
 
 ROOT = Path(__file__).parent
 BAGS_DIR = ROOT / "bags"
+VARIABLE_MASS_OUTPUT_DIR = ROOT / "variable_mass_results"
 PLOTS_DIR = ROOT / "plots"
 RESULTS_DIR = ROOT / "results"
 
@@ -157,6 +158,7 @@ def run_one(args, bag_path, stamp, show):
         lead_vel=lead_vel,
         ghosts=args.ghosts,
         controller_params=args.controller_params,
+        variable_mass=args.variable_mass,
     )
 
     source = bag_path.stem if bag_path is not None else "sine"
@@ -171,21 +173,24 @@ def run_one(args, bag_path, stamp, show):
 
     print(f"[{run_name}] {len(platoon)} vehicles, {duration:g}s "
           f"({n_wtj} WTJ, {len(platoon) - n_wtj} TG), "
+          f"{'variable' if args.variable_mass else 'fixed'} mass dynamics, "
           f"avg positive work {work.mean():.5f} m^2/s^3")
 
     append_rows(
         RESULTS_DIR / "runs.csv",
         ["run", "source", "n_vehicles", "penetration_rate", "n_wtj", "n_tg",
-         "duration_s", "dt", "avg_positive_work", "controller_params"],
+         "duration_s", "dt", "variable_mass", "avg_positive_work", "controller_params"],
         [{"run": run_name, "source": source, "n_vehicles": args.n_vehicles,
           "penetration_rate": args.penetration_rate, "n_wtj": n_wtj,
           "n_tg": len(platoon) - n_wtj, "duration_s": duration, "dt": args.dt,
+          "variable_mass": args.variable_mass,
           "avg_positive_work": work.mean(), "controller_params": params or "defaults"}],
     )
     append_rows(
         RESULTS_DIR / "cars.csv",
-        ["run", "car", "type", "mass_kg", "avg_positive_work"],
+        ["run", "car", "type", "mass_kg", "variable_mass", "avg_positive_work"],
         [{"run": run_name, "car": v.id, "type": v.type, "mass_kg": round(v.mass, 1),
+          "variable_mass": args.variable_mass,
           "avg_positive_work": w} for v, w in zip(platoon, work)],
     )
 
@@ -196,13 +201,15 @@ def run_one(args, bag_path, stamp, show):
             print(f"    {ghost_type} ghosts on {len(diffs)} WTJ cars: ghost - WTJ total work "
                   f"sum {diffs.sum():+.2f}, mean {diffs.mean():+.3f} m^2/s^2 per car "
                   f"(positive = {ghost_type} would have done more work)")
-        rows = [{"run": run_name, **asdict(r)} for r in ghosts]
+        rows = [{"run": run_name, "variable_mass": args.variable_mass, **asdict(r)} for r in ghosts]
         append_rows(RESULTS_DIR / "ghosts.csv", list(rows[0]), rows)
 
     if args.no_plot:
         return
 
-    title = f"{source}, n={args.n_vehicles}, p={args.penetration_rate:g}" + (f", {params}" if params else "")
+    title = f"{source}, n={args.n_vehicles}, p={args.penetration_rate:g}"
+    title += ", variable mass" if args.variable_mass else ", fixed mass"
+    title += f", {params}" if params else ""
     figures = {
         "positions": plot_state(data, time, platoon, 0, "Position (m)", title),
         "speeds": plot_state(data, time, platoon, 1, "Speed (m/s)", title),
@@ -224,6 +231,9 @@ def main():
     parser.add_argument("--length", type=float, default=360,
                         help="sim length in seconds (synthetic lead only)")
     parser.add_argument("--dt", type=float, default=0.05)
+    parser.add_argument("--variable-mass", action="store_true",
+                        help="scale each vehicle's acceleration response by its sampled mass; "
+                             "outputs go to variable_mass_results/")
     source = parser.add_mutually_exclusive_group()
     source.add_argument("--bag", help="bag to take the lead speed from: a path, or a name in bags/")
     source.add_argument("--all-bags", action="store_true", help="run once per .bag in bags/")
@@ -242,6 +252,11 @@ def main():
     parser.add_argument("--no-plot", action="store_true", help="skip saving plots")
     parser.add_argument("--show", action="store_true", help="also open the plots in a window")
     args = parser.parse_args()
+
+    global PLOTS_DIR, RESULTS_DIR
+    if args.variable_mass:
+        PLOTS_DIR = VARIABLE_MASS_OUTPUT_DIR / "plots"
+        RESULTS_DIR = VARIABLE_MASS_OUTPUT_DIR / "results"
 
     args.controller_params = {name: parse_params(name, getattr(args, name.lower()), parser)
                               for name in CONTROLLERS}

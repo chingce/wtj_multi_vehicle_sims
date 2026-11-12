@@ -4,10 +4,12 @@ from controllers import Controller
 
 
 class Vehicle:
-    def __init__(self, vehicle_id: int, controller: Controller, mass: float, position: float = 0, speed: float = 0):
+    def __init__(self, vehicle_id: int, controller: Controller, mass: float, position: float = 0,
+                 speed: float = 0, variable_mass: bool = False):
         self.id = vehicle_id
         self.controller = controller
         self.mass = mass
+        self.variable_mass = variable_mass
         self.position = position  # Initial position
         self.speed = speed        # Initial speed
         self.acceleration = 0     # Initial acceleration
@@ -22,7 +24,8 @@ class Vehicle:
         """Advance one time step following a vehicle at lead_position / lead_speed."""
         cmd_accel = self.controller.cmd_accel(sn=lead_position - self.position, vn=self.speed,
                                               sndot=lead_speed - self.speed)
-        self.acceleration = dynamics(cmd_accel, self.acceleration)
+        self.acceleration = dynamics(cmd_accel, self.acceleration, self.mass,
+                                     variable_mass=self.variable_mass)
         self.speed += self.acceleration * dt
         self.position += self.speed * dt
 
@@ -51,13 +54,24 @@ def sample_weight():
     return weight
 
 
-def dynamics(cmd_accel, accel):
+def dynamics(cmd_accel, accel, mass=None, reference_mass=1500, variable_mass=False):
     """
     CarComplexSimulink -- discretized (also I think wrong...)
+
+    With variable_mass enabled, scale commanded acceleration by mass so heavier
+    vehicles respond more slowly than the reference passenger car.
     """
-    if cmd_accel >= 0:
-        accel = .8395 * accel + .1605 * cmd_accel
+    effective_cmd_accel = cmd_accel
+    if variable_mass:
+        if mass is None:
+            raise ValueError("mass is required when variable_mass=True")
+        mass_factor = reference_mass / mass
+        mass_factor = np.clip(mass_factor, 0.2, 1.5)
+        effective_cmd_accel = cmd_accel * mass_factor
+
+    if effective_cmd_accel >= 0:
+        accel = .8395 * accel + .1605 * effective_cmd_accel
     else:
-        accel = .9277 * accel + .0723 * cmd_accel
+        accel = .9277 * accel + .0723 * effective_cmd_accel
 
     return accel

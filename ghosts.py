@@ -33,7 +33,8 @@ class GhostCar(Vehicle):
 
     def __init__(self, host: Vehicle, controller, n_steps: int):
         super().__init__(vehicle_id=host.id, controller=controller,
-                         mass=host.mass, position=host.position, speed=host.speed)
+                         mass=host.mass, position=host.position, speed=host.speed,
+                         variable_mass=host.variable_mass)
         self.host = host
         # Same layout as one row of the sim output: position, speed, acceleration per step
         self.trajectory = np.zeros((3, n_steps))

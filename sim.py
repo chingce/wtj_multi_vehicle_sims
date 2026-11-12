@@ -8,7 +8,8 @@ from vehicles import Vehicle, dynamics, sample_weight  # noqa: F401
 
 
 def sim(n_vehicles: int, penetration_rate: float, sim_length_seconds: float = None, dt: float = .05,
-        lead_vel: np.ndarray = None, ghosts=None, controller_params: dict = None):
+        lead_vel: np.ndarray = None, ghosts=None, controller_params: dict = None,
+        variable_mass: bool = False):
     """
     Simulate the traffic flow
 
@@ -24,6 +25,7 @@ def sim(n_vehicles: int, penetration_rate: float, sim_length_seconds: float = No
         no ghosts. Ghosts never affect traffic; compare them with ghosts.compare_ghosts.
     controller_params: Optional overrides of controller defaults, keyed by controller name,
         e.g. {"WTJ": {"c": 0.2}, "TG": {"tau": 2.0}}. Applies to real vehicles and ghosts alike.
+    variable_mass: If True, each vehicle's sampled mass scales its acceleration response.
 
     Returns:
     sim_output (np.ndarray): A 3D array containing the position, speed, and acceleration of each vehicle at each time step.
@@ -54,7 +56,8 @@ def sim(n_vehicles: int, penetration_rate: float, sim_length_seconds: float = No
             controller=make_controller(controller_name, controller_params.get(controller_name)),
             mass=sample_weight(),
             position=-50 * i,
-            speed=lead_vehicle_vel[0]
+            speed=lead_vehicle_vel[0],
+            variable_mass=variable_mass
         )
         platoon.append(vehicle)
         sim_output[i, 0, 0] = vehicle.position

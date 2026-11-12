@@ -60,6 +60,7 @@ speed in m/s.
 | `--n-vehicles N` | 100 | Number of followers |
 | `--penetration-rate P` | 0.2 | Fraction of followers running WTJ (0 to 1); the rest run TG |
 | `--dt DT` | 0.05 | Time step in seconds |
+| `--variable-mass` | off | Scale each vehicle's acceleration response by its sampled mass; outputs go to `variable_mass_results/` |
 | `--wtj KEY=VALUE ...` | | Override WTJ controller parameters, e.g. `--wtj c=0.2 tau_min=1.5`. See [controller parameters](#controller-parameters) |
 | `--tg KEY=VALUE ...` | | Override TG controller parameters, e.g. `--tg tau=2.0` |
 | `--ghosts [CTRL ...]` | off | Give every WTJ car one ghost per listed controller (`TG`, `WTJ`); with no list, one `TG` ghost. See [Ghost cars](#ghost-cars) |
@@ -80,7 +81,10 @@ for p in 0 0.25 0.5 0.75 1; do uv run main.py --all-bags --penetration-rate $p -
 ```
 
 Controller assignment and vehicle masses are random, so repeated runs with the
-same settings give slightly different results.
+same settings give slightly different results. By default, sampled mass is
+recorded but does not affect dynamics. With `--variable-mass`, mass scales the
+actuator dynamics: heavier vehicles respond more slowly than the 1,500 kg
+reference car.
 
 ## Controller parameters
 
@@ -155,7 +159,9 @@ platoon[4].ghosts[0].trajectory   # shape (3, n_steps): position, speed, acceler
 ## Output
 
 Each run is named like `20261110-192252_realRun_n50_p0.5` (timestamp, bag
-name, number of followers, penetration rate).
+name, number of followers, penetration rate). Default fixed-dynamics outputs go
+to `plots/` and `results/`. Runs with `--variable-mass` go to
+`variable_mass_results/plots/` and `variable_mass_results/results/`.
 
 **Plots** go to `plots/<graph>/<run>.png`, one folder per graph:
 
@@ -167,16 +173,18 @@ name, number of followers, penetration rate).
 **Metrics** are added to two CSVs in `results/`. Each run adds rows to them, so
 results from many runs collect in one place:
 
-- `runs.csv`: one row per run with its settings, WTJ/TG counts and the average
-  positive work across followers.
-- `cars.csv`: one row per follower with its type, mass and positive work.
+- `runs.csv`: one row per run with its settings, WTJ/TG counts, whether
+  variable mass was enabled, and the average positive work across followers.
+- `cars.csv`: one row per follower with its type, mass, whether variable mass
+  was enabled, and positive work.
 
 Average positive work for each follower is
 
 $$\frac{1}{T}\sum_t \max\big(a(t)\,v(t),\ 0\big)\,\Delta t$$
 
 where $T$ is the sim length. It has no mass term, so the units are m²/s³
-(W/kg). The leader is not included.
+(W/kg). With `--variable-mass`, mass affects the simulated vehicle dynamics but
+is still not multiplied into this metric. The leader is not included.
 
 ## Using it from Python or the notebook
 
@@ -187,6 +195,7 @@ from metrics import positive_work_per_car
 
 lead_vel = load_lead_from_bag("bags/realRun.bag", dt=0.05, start=300, end=600)
 data, time, platoon = sim(n_vehicles=50, penetration_rate=0.5, dt=0.05, lead_vel=lead_vel)
+# or add variable_mass=True to scale acceleration response by sampled mass
 work = positive_work_per_car(data, dt=0.05)
 ```
 
@@ -200,7 +209,7 @@ the `.venv` kernel in VS Code.
 |---|---|
 | `main.py` | Command-line entry point: runs sims, saves plots and CSVs |
 | `sim.py` | Platoon simulation |
-| `vehicles.py` | `Vehicle`, actuator dynamics, vehicle mass sampling |
+| `vehicles.py` | `Vehicle`, optional mass-scaled actuator dynamics, vehicle mass sampling |
 | `ghosts.py` | `GhostCar`, `attach_ghosts`, `compare_ghosts` |
 | `controllers.py` | `TimeGapController`, `WTJController` (`IDMController` is a stub) |
 | `lead.py` | Loads a lead speed profile from a bag |
