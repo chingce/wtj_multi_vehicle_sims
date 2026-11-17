@@ -61,13 +61,16 @@ def wtj_branch(r):
 
 
 def run_python(rows):
+    """Run the controller classes from controllers.py, built with each row's parameters."""
     tg = np.array([
-        controllers.timeGap(r["sn"], r["vn"], r["sndot"], r["alpha"], r["tau"], r["gmin"], r["lam"])
+        controllers.TimeGapController(alpha=r["alpha"], tau=r["tau"], gmin=r["gmin"], lam=r["lam"])
+        .cmd_accel(r["sn"], r["vn"], r["sndot"])
         for r in rows
     ], dtype=float)
     wt = np.array([
-        controllers.wtj(r["sn"], r["vn"], r["sndot"], r["alpha"], r["tau_min"], r["tau_max"],
-                        r["gmin"], r["lam"], r["c"])
+        controllers.WTJController(alpha=r["alpha"], tau_min=r["tau_min"], tau_max=r["tau_max"],
+                                  gmin=r["gmin"], lam=r["lam"], c=r["c"])
+        .cmd_accel(r["sn"], r["vn"], r["sndot"])
         for r in rows
     ], dtype=float)
     return tg, wt

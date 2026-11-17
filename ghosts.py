@@ -20,11 +20,11 @@ from dataclasses import dataclass, field
 
 import numpy as np
 
-from controllers import CONTROLLERS, make_controller
+from controllers import CONTROLLERS, SMART_CONTROLLERS, make_controller
 from metrics import total_positive_work
 from vehicles import Vehicle
 
-HOST_TYPE = "WTJ"           # Only vehicles running this controller get ghosts
+HOST_TYPES = SMART_CONTROLLERS   # Only vehicles running one of these controllers (WTJ, WTJ2, WTJ3, WTJ4) get ghosts
 DEFAULT_GHOSTS = ("TG",)    # Ghost controllers used when ghosts are turned on without a list
 
 
@@ -58,7 +58,7 @@ def attach_ghosts(platoon: list[Vehicle], ghost_controllers, n_steps: int, contr
         raise ValueError(f"Unknown ghost controller(s) {unknown}; choose from {list(CONTROLLERS)}")
     controller_params = controller_params or {}
     for vehicle in platoon:
-        if vehicle.type == HOST_TYPE:
+        if vehicle.type in HOST_TYPES:
             vehicle.ghosts = [GhostCar(vehicle, make_controller(name, controller_params.get(name)), n_steps)
                               for name in ghost_controllers]
 

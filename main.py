@@ -1,87 +1,25 @@
 import argparse
 import csv
+import os
+import random
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import asdict
 from datetime import datetime
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import Patch
-from matplotlib.ticker import MaxNLocator
 
-from controllers import CONTROLLERS, controller_param_names
+from controllers import CONTROLLERS, SMART_CONTROLLERS, controller_param_names
 from ghosts import DEFAULT_GHOSTS, compare_ghosts
 from lead import load_lead_from_bag
 from metrics import positive_work_per_car
-from sim import sim
+from run_io import write_run_csvs
+from sim import CollisionError, sim
 
 ROOT = Path(__file__).parent
 BAGS_DIR = ROOT / "bags"
 VARIABLE_MASS_OUTPUT_DIR = ROOT / "variable_mass_results"
-PLOTS_DIR = ROOT / "plots"
 RESULTS_DIR = ROOT / "results"
-
-TYPE_COLORS = {"lead": "green", "WTJ": "blue", "TG": "red", "IDM": "orange"}
-
-
-def vehicle_color(i, platoon):
-    """Color for row i of the sim output (row 0 is the leader)."""
-    return TYPE_COLORS["lead"] if i == 0 else TYPE_COLORS[platoon[i - 1].type]
-
-
-def save_figure(fig, graph, run_name):
-    """Save a figure to plots/<graph>/<run_name>.png."""
-    out_dir = PLOTS_DIR / graph
-    out_dir.mkdir(parents=True, exist_ok=True)
-    path = out_dir / f"{run_name}.png"
-    fig.savefig(path, dpi=150, bbox_inches="tight")
-    return path
-
-
-def plot_state(data, time, platoon, index, ylabel, title):
-    """One line per vehicle for one state (0 position, 1 speed, 2 acceleration)."""
-    fig, ax = plt.subplots(figsize=(10, 6))
-    for i in range(data.shape[0]):
-        ax.plot(time, data[i, index, :], color=vehicle_color(i, platoon), linewidth=0.8)
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
-    return fig
-
-
-BAR_ALPHA = 0.6     # Opacity of the real cars' work bars
-GHOST_ALPHA = 0.2   # Opacity of the ghost work bars drawn over them
-
-
-def plot_work(work, platoon, title, ghosts=(), ghost_types=(), duration=None):
-    """
-    Bar per follower, colored by controller type. Ghosts, if any, are drawn as
-    fainter bars in the same slot as their WTJ car's bar, using the same
-    average-rate measure (ghost total work / sim length).
-    """
-    fig, ax = plt.subplots(figsize=(10, 6))
-    car_ids = [v.id for v in platoon]
-    ax.bar(car_ids, work, color=[TYPE_COLORS[v.type] for v in platoon], alpha=BAR_ALPHA, zorder=2)
-    ax.axhline(work.mean(), color="black", linestyle="--", linewidth=1,
-               label=f"mean {work.mean():.4f}")
-    handles = [Patch(color=TYPE_COLORS["WTJ"], alpha=BAR_ALPHA, label="WTJ"),
-               Patch(color=TYPE_COLORS["TG"], alpha=BAR_ALPHA, label="TG"),
-               ax.get_lines()[0]]
-
-    for ghost_type in ghost_types:
-        mine = [r for r in ghosts if r.ghost_type == ghost_type]
-        color = TYPE_COLORS.get(ghost_type, "gray")
-        ax.bar([r.car for r in mine], [r.ghost_total_work / duration for r in mine],
-               color=color, alpha=GHOST_ALPHA, zorder=1)  # behind the real bars
-        handles.append(Patch(color=color, alpha=GHOST_ALPHA, label=f"{ghost_type} ghost on WTJ car"))
-
-    ax.xaxis.set_major_locator(MaxNLocator(integer=True))
-    ax.set_xlabel("Car (position behind leader)")
-    ax.set_ylabel("Average positive work (m²/s³)")
-    ax.set_title(title)
-    ax.legend(handles=handles)
-    return fig
-
 
 def append_rows(path, fieldnames, rows):
     """
@@ -144,98 +82,127 @@ def resolve_bag(name):
     raise FileNotFoundError(f"Could not find bag {name!r} (also looked in {BAGS_DIR}).")
 
 
-def run_one(args, bag_path, stamp, show):
-    lead_vel = None
-    if bag_path is not None:
-        lead_vel = load_lead_from_bag(bag_path, args.dt, topic=args.bag_topic,
-                                      start=args.start, end=args.end)
-
-    data, time, platoon = sim(
+def run_sim(args, lead_vel, rate):
+    return sim(
         n_vehicles=args.n_vehicles,
-        penetration_rate=args.penetration_rate,
+        penetration_rate=rate,
         sim_length_seconds=args.length,
         dt=args.dt,
         lead_vel=lead_vel,
         ghosts=args.ghosts,
         controller_params=args.controller_params,
         variable_mass=args.variable_mass,
+        base_controller=args.base,
+        smart_controller=args.smart,
+        stop_on_collision=not args.allow_collisions,
     )
+
+
+def run_one(args, bag_path, stamp, rate, results_dir):
+    """
+    One simulation at penetration rate `rate`. Safe to run in a worker process:
+    it writes only its own run folder, and returns (lines to print, rows to add
+    to the shared CSVs) so the main process does all writes to runs.csv,
+    cars.csv and ghosts.csv.
+    """
+    lines, appends = [], []   # appends: (csv file name, fieldnames, rows)
+    if args.seed is not None:
+        # Same seed -> same controller draw and masses, so runs that differ only in
+        # --smart (or a controller parameter) put the same kind of car in each slot
+        random.seed(args.seed)
+        np.random.seed(args.seed)
+
+    lead_vel = None
+    if bag_path is not None:
+        lead_vel = load_lead_from_bag(bag_path, args.dt, topic=args.bag_topic,
+                                      start=args.start, end=args.end)
 
     source = bag_path.stem if bag_path is not None else "sine"
     params = format_params(args.controller_params)
     # e.g. "_WTJ-c0.2" when WTJ's c was changed; nothing when all defaults
     param_tag = "".join(f"_{name}-" + "-".join(f"{k}{v:g}" for k, v in p.items())
                         for name, p in args.controller_params.items() if p)
-    run_name = f"{stamp}_{source}_n{args.n_vehicles}_p{args.penetration_rate:g}{param_tag}"
+    smart_tag = "" if args.smart == "WTJ" else f"_{args.smart}"   # e.g. "_WTJ3"; nothing for plain WTJ
+    run_name = f"{stamp}_{source}_n{args.n_vehicles}_p{rate:g}_{args.base}{smart_tag}{param_tag}"
+    run_fields = ["run", "source", "n_vehicles", "penetration_rate", "smart_controller", "base_controller",
+                  "n_wtj", "n_base", "duration_s", "dt", "variable_mass", "avg_positive_work",
+                  "controller_params", "seed", "collision"]
+    run_row = {"run": run_name, "source": source, "n_vehicles": args.n_vehicles,
+               "penetration_rate": rate, "smart_controller": args.smart,
+               "base_controller": args.base, "dt": args.dt, "variable_mass": args.variable_mass,
+               "controller_params": params or "defaults",
+               "seed": "" if args.seed is None else args.seed, "collision": ""}
+
+    try:
+        data, time, platoon = run_sim(args, lead_vel, rate)
+    except CollisionError as crash:
+        # The run is stopped: record what happened in runs.csv, and write nothing else
+        lines.append(f"[{run_name}] STOPPED: {crash}")
+        appends.append(("runs.csv", run_fields, [{**run_row, "collision": str(crash)}]))
+        return lines, appends
+
     duration = len(time) * args.dt
     work = positive_work_per_car(data, args.dt)
-    n_wtj = sum(v.type == "WTJ" for v in platoon)
+    n_wtj = sum(v.type == args.smart for v in platoon)
+    n_base = len(platoon) - n_wtj
 
-    print(f"[{run_name}] {len(platoon)} vehicles, {duration:g}s "
-          f"({n_wtj} WTJ, {len(platoon) - n_wtj} TG), "
-          f"{'variable' if args.variable_mass else 'fixed'} mass dynamics, "
-          f"avg positive work {work.mean():.5f} m^2/s^3")
+    lines.append(f"[{run_name}] {len(platoon)} vehicles, {duration:g}s "
+                 f"({n_wtj} {args.smart}, {n_base} {args.base}), "
+                 f"{'variable' if args.variable_mass else 'fixed'} mass dynamics, "
+                 f"avg positive work {work.mean():.5f} m^2/s^3")
+    appends.append(("runs.csv", run_fields,
+                    [{**run_row, "n_wtj": n_wtj, "n_base": n_base, "duration_s": duration,
+                      "avg_positive_work": work.mean()}]))
+    appends.append(("cars.csv", ["run", "car", "type", "mass_kg", "variable_mass", "avg_positive_work"],
+                    [{"run": run_name, "car": v.id, "type": v.type, "mass_kg": round(v.mass, 1),
+                      "variable_mass": args.variable_mass, "avg_positive_work": w}
+                     for v, w in zip(platoon, work)]))
 
-    append_rows(
-        RESULTS_DIR / "runs.csv",
-        ["run", "source", "n_vehicles", "penetration_rate", "n_wtj", "n_tg",
-         "duration_s", "dt", "variable_mass", "avg_positive_work", "controller_params"],
-        [{"run": run_name, "source": source, "n_vehicles": args.n_vehicles,
-          "penetration_rate": args.penetration_rate, "n_wtj": n_wtj,
-          "n_tg": len(platoon) - n_wtj, "duration_s": duration, "dt": args.dt,
-          "variable_mass": args.variable_mass,
-          "avg_positive_work": work.mean(), "controller_params": params or "defaults"}],
-    )
-    append_rows(
-        RESULTS_DIR / "cars.csv",
-        ["run", "car", "type", "mass_kg", "variable_mass", "avg_positive_work"],
-        [{"run": run_name, "car": v.id, "type": v.type, "mass_kg": round(v.mass, 1),
-          "variable_mass": args.variable_mass,
-          "avg_positive_work": w} for v, w in zip(platoon, work)],
-    )
+    run_dir = results_dir / "runs" / run_name
+    write_run_csvs(run_dir, data, time, platoon)
+    lines.append(f"    per-vehicle CSVs in {run_dir}")
 
     ghosts = compare_ghosts(data, platoon, args.dt)
     if ghosts:
         for ghost_type in args.ghosts:
             diffs = np.array([r.work_diff for r in ghosts if r.ghost_type == ghost_type])
-            print(f"    {ghost_type} ghosts on {len(diffs)} WTJ cars: ghost - WTJ total work "
-                  f"sum {diffs.sum():+.2f}, mean {diffs.mean():+.3f} m^2/s^2 per car "
-                  f"(positive = {ghost_type} would have done more work)")
+            lines.append(f"    {ghost_type} ghosts on {len(diffs)} {args.smart} cars: ghost - {args.smart} total work "
+                         f"sum {diffs.sum():+.2f}, mean {diffs.mean():+.3f} m^2/s^2 per car "
+                         f"(positive = {ghost_type} would have done more work)")
         rows = [{"run": run_name, "variable_mass": args.variable_mass, **asdict(r)} for r in ghosts]
-        append_rows(RESULTS_DIR / "ghosts.csv", list(rows[0]), rows)
-
-    if args.no_plot:
-        return
-
-    title = f"{source}, n={args.n_vehicles}, p={args.penetration_rate:g}"
-    title += ", variable mass" if args.variable_mass else ", fixed mass"
-    title += f", {params}" if params else ""
-    figures = {
-        "positions": plot_state(data, time, platoon, 0, "Position (m)", title),
-        "speeds": plot_state(data, time, platoon, 1, "Speed (m/s)", title),
-        "accelerations": plot_state(data, time, platoon, 2, "Acceleration (m/s²)", title),
-        "positive_work": plot_work(work, platoon, title, ghosts=ghosts,
-                                   ghost_types=args.ghosts or (), duration=duration),
-    }
-    for graph, fig in figures.items():
-        save_figure(fig, graph, run_name)
-    if show:
-        plt.show()
-    plt.close("all")
+        appends.append(("ghosts.csv", list(rows[0]), rows))
+    return lines, appends
 
 
 def main():
     parser = argparse.ArgumentParser(description="Run the multi-vehicle traffic sim.")
     parser.add_argument("--n-vehicles", type=int, default=100)
-    parser.add_argument("--penetration-rate", type=float, default=0.2)
+    parser.add_argument("--allow-collisions", action="store_true",
+                        help="keep simulating when a car reaches the car ahead (default: stop the run "
+                             "and record the collision in runs.csv)")
+    parser.add_argument("--seed", type=int,
+                        help="random seed for controller assignment and masses (default: random each run)")
+    parser.add_argument("--penetration-rate", type=float, nargs="+", default=[0.2], metavar="P",
+                        help="share of followers running --smart (0 to 1). Give several values to run "
+                             "them all, in parallel (see --jobs)")
+    parser.add_argument("--jobs", type=int, default=0,
+                        help="how many simulations to run at once when there are several "
+                             "(rates x bags); default: all of them, up to the CPU count. 1 = one at a time")
+    parser.add_argument("--smart", choices=list(SMART_CONTROLLERS) + ["TG"], default="WTJ",
+                        help="controller run by the --penetration-rate share of vehicles (default WTJ). "
+                             "TG is allowed for comparison; TG cars get no ghosts")
+    parser.add_argument("--base", choices=[c for c in CONTROLLERS if c not in SMART_CONTROLLERS], default="IDM",
+                        help="controller for the vehicles that don't run WTJ (default IDM)")
     parser.add_argument("--length", type=float, default=360,
                         help="sim length in seconds (synthetic lead only)")
     parser.add_argument("--dt", type=float, default=0.05)
     parser.add_argument("--variable-mass", action="store_true",
                         help="scale each vehicle's acceleration response by its sampled mass; "
-                             "outputs go to variable_mass_results/")
+                             "outputs go to variable_mass_results/results/")
     source = parser.add_mutually_exclusive_group()
-    source.add_argument("--bag", help="bag to take the lead speed from: a path, or a name in bags/")
+    source.add_argument("--bag", nargs="+", metavar="BAG",
+                        help="bag(s) to take the lead speed from: paths, or names in bags/. "
+                             "Several bags run in parallel like several rates")
     source.add_argument("--all-bags", action="store_true", help="run once per .bag in bags/")
     parser.add_argument("--bag-topic", help="speed topic in the bag (default: auto-detect)")
     parser.add_argument("--start", type=float, default=0.0,
@@ -249,17 +216,17 @@ def main():
         parser.add_argument(f"--{name.lower()}", nargs="+", metavar="KEY=VALUE",
                             help=f"override {name} controller parameters "
                                  f"({', '.join(controller_param_names(name))}); also applies to {name} ghosts")
-    parser.add_argument("--no-plot", action="store_true", help="skip saving plots")
-    parser.add_argument("--show", action="store_true", help="also open the plots in a window")
     args = parser.parse_args()
 
-    global PLOTS_DIR, RESULTS_DIR
+    global RESULTS_DIR
     if args.variable_mass:
-        PLOTS_DIR = VARIABLE_MASS_OUTPUT_DIR / "plots"
         RESULTS_DIR = VARIABLE_MASS_OUTPUT_DIR / "results"
 
     args.controller_params = {name: parse_params(name, getattr(args, name.lower()), parser)
                               for name in CONTROLLERS}
+
+    if args.smart == args.base:
+        parser.error(f"--smart and --base are both {args.base}; pick different controllers")
 
     if args.ghosts == []:  # flag given with no controllers
         args.ghosts = list(DEFAULT_GHOSTS)
@@ -271,15 +238,32 @@ def main():
         if not bags:
             parser.error(f"No .bag files in {BAGS_DIR}")
     elif args.bag:
-        bags = [resolve_bag(args.bag)]
+        bags = [resolve_bag(name) for name in args.bag]
     else:
         bags = [None]  # synthetic sine-wave lead
 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    for bag_path in bags:
-        run_one(args, bag_path, stamp, show=args.show and len(bags) == 1)
+    tasks = [(bag_path, rate) for bag_path in bags for rate in args.penetration_rate]
+    jobs = min(args.jobs or os.cpu_count() or 1, len(tasks))
 
-    print(f"Results appended to {RESULTS_DIR}; plots in {PLOTS_DIR}")
+    def record(lines, appends):
+        # Only the main process writes the shared CSVs, one run at a time
+        for line in lines:
+            print(line, flush=True)
+        for file_name, fields, rows in appends:
+            append_rows(RESULTS_DIR / file_name, fields, rows)
+
+    if jobs <= 1:
+        for bag_path, rate in tasks:
+            record(*run_one(args, bag_path, stamp, rate, RESULTS_DIR))
+    else:
+        print(f"Running {len(tasks)} simulations, {jobs} at a time...", flush=True)
+        with ProcessPoolExecutor(max_workers=jobs) as pool:
+            futures = [pool.submit(run_one, args, bag_path, stamp, rate, RESULTS_DIR) for bag_path, rate in tasks]
+            for future in as_completed(futures):
+                record(*future.result())
+
+    print(f"Results in {RESULTS_DIR}. To plot: uv run plot_run.py (and plot_fd.py) [RUN ...]")
 
 
 if __name__ == "__main__":

@@ -2,6 +2,8 @@ import numpy as np
 
 from controllers import Controller
 
+V_MAX = 30.0   # m/s, speed limit for every simulated vehicle (and ghost)
+
 
 class Vehicle:
     def __init__(self, vehicle_id: int, controller: Controller, mass: float, position: float = 0,
@@ -24,9 +26,15 @@ class Vehicle:
         """Advance one time step following a vehicle at lead_position / lead_speed."""
         cmd_accel = self.controller.cmd_accel(sn=lead_position - self.position, vn=self.speed,
                                               sndot=lead_speed - self.speed)
-        self.acceleration = dynamics(cmd_accel, self.acceleration, self.mass,
+        self.acceleration = dynamics(cmd_accel, self.acceleration, self.mass, dt=dt,
                                      variable_mass=self.variable_mass)
-        self.speed += self.acceleration * dt
+        # Speed stays in [0, V_MAX]: cars don't reverse, and don't go faster than V_MAX.
+        # At either limit, acceleration that would push past it is dropped.
+        self.speed = min(V_MAX, max(0.0, self.speed + self.acceleration * dt))
+        if self.speed == 0.0:
+            self.acceleration = max(self.acceleration, 0.0)
+        elif self.speed == V_MAX:
+            self.acceleration = min(self.acceleration, 0.0)
         self.position += self.speed * dt
 
 

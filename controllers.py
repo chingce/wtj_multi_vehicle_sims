@@ -29,7 +29,7 @@ class IDMController(Controller):
     """
     name = "IDM"
 
-    def __init__(self, v0=30.0, T=1.5, a_max=0.73, b=1.67, delta=4.0, s0=2.0):
+    def __init__(self, v0=30.0, T=1.5, a_max=0.73, b=1.67, delta=4.0, s0=5.0):
         self.v0 = v0
         self.T = T
         self.a_max = a_max
@@ -80,9 +80,70 @@ class WTJController(Controller):
         a_star = self.c * sqrt(1/(vn + 0.25)) - (self.c * sqrt(1/(30 + 0.25)))
         return min(1.5, max(-3,min(max(al, a_star), au)))
 
+class WTJ2Controller(WTJController):
+    """
+    The regular WTJ controller with lam = 2 instead of 0.5: same formula
+    (a_star clamped to [al, au]), stronger reaction to closing in on the car
+    ahead. Every parameter can still be changed with --wtj2.
+    """
+    name = "WTJ2"
+
+    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=2.0, c=0.1):
+        super().__init__(alpha=alpha, tau_min=tau_min, tau_max=tau_max, gmin=gmin, lam=lam, c=c)
+
+
+class WTJ3Controller(WTJController):
+    """
+    WTJ without the hard lower bound al. Where WTJ picks a_star clamped to
+    [al, au], WTJ3 targets a blend of al (the tau_max time-gap acceleration)
+    and a_star,
+
+        a_target = beta * al + (1 - beta) * a_star,
+
+    capped above by au only. So it does not chase every speed-up of the car
+    ahead (smoother, less work), while beta still pulls it toward the tau_max
+    gap: it closes large gaps and starts braking earlier when inside that gap.
+    beta = 0 would ignore al entirely.
+
+    Defaults: lam = 3 (lam = 0.5 let WTJ3 crash on realRun when closing on a
+    stopping car) and beta = 0.25. WTJ4 is the same with beta = 0.1.
+    """
+    name = "WTJ3"
+
+    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=3.0, c=0.1, beta=0.25):
+        super().__init__(alpha=alpha, tau_min=tau_min, tau_max=tau_max, gmin=gmin, lam=lam, c=c)
+        self.beta = beta
+
+    def cmd_accel(self, sn, vn, sndot):
+        al = min(1.5, max(-3,self.alpha * (sn - self.tau_max*vn - self.gmin) + min(0,self.lam*sndot)))
+        au = min(1.5, max(-3,self.alpha * (sn - self.tau_min*vn - self.gmin) + min(0,self.lam*sndot)))
+        if vn <= 0:
+            return al
+
+        # WTJ's a_star: zero at 30 m/s, larger at low speed
+        a_star = self.c * sqrt(1/(vn + 0.25)) - (self.c * sqrt(1/(30 + 0.25)))
+        a_target = self.beta * al + (1 - self.beta) * a_star
+        return min(1.5, max(-3,min(a_target, au)))
+
+
+class WTJ4Controller(WTJ3Controller):
+    """
+    WTJ3 with a lighter pull toward al: beta = 0.1 instead of 0.25. Everything
+    else (formula, lam = 3, other defaults) is the same as WTJ3; every parameter
+    can still be changed with --wtj4.
+    """
+    name = "WTJ4"
+
+    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=3.0, c=0.1, beta=0.1):
+        super().__init__(alpha=alpha, tau_min=tau_min, tau_max=tau_max, gmin=gmin, lam=lam, c=c, beta=beta)
+
 
 # Controllers by name, for picking one from a string (e.g. on the command line)
-CONTROLLERS = {cls.name: cls for cls in (TimeGapController, WTJController, IDMController)}
+CONTROLLERS = {cls.name: cls for cls in (TimeGapController, WTJController, WTJ2Controller, WTJ3Controller,
+                                         WTJ4Controller, IDMController)}
+
+# Our controllers: the ones the penetration rate assigns, and that get ghosts
+SMART_CONTROLLERS = ("WTJ", "WTJ2", "WTJ3", "WTJ4")
 
 
 def controller_param_names(name):

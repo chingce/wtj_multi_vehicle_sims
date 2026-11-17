@@ -3,3 +3,10 @@ __pycache__/
 bags/*.bag
 variable_mass_results/plots/
 *.ipynb
+
+# Raw per-run data: one folder per run with step-by-step timeseries.csv (~100 MB),
+# vehicles.csv and density/flow box CSVs. Rerun with the same --seed to regenerate.
+# Whole-run aggregates (runs.csv, cars.csv, ghosts.csv, flow_density_stats_*.csv) stay tracked.
+results/runs/
+variable_mass_results/results/runs/
+timeseries.csv
