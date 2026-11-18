@@ -68,7 +68,7 @@ def run_python(rows):
         for r in rows
     ], dtype=float)
     wt = np.array([
-        controllers.WTJController(alpha=r["alpha"], tau_min=r["tau_min"], tau_max=r["tau_max"],
+        controllers.WTJOriginal(alpha=r["alpha"], tau_min=r["tau_min"], tau_max=r["tau_max"],
                                   gmin=r["gmin"], lam=r["lam"], c=r["c"])
         .cmd_accel(r["sn"], r["vn"], r["sndot"])
         for r in rows

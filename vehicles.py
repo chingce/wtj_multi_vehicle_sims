@@ -19,7 +19,7 @@ class Vehicle:
 
     @property
     def type(self) -> str:
-        """Controller name, e.g. "WTJ" or "TG"."""
+        """Controller name, e.g. "WTJ3" or "TG"."""
         return self.controller.name
 
     def step(self, lead_position: float, lead_speed: float, dt: float):

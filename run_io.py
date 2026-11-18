@@ -21,6 +21,51 @@ import numpy as np
 ROOT = Path(__file__).parent
 RUN_DIRS = (ROOT / "results" / "runs", ROOT / "variable_mass_results" / "results" / "runs")
 
+# Throughput marker per bag (m from the leader's start): far enough in that the
+# platoon has formed, close enough that every car gets there. Other sources
+# (e.g. the synthetic sine lead) use DEFAULT_MARKER_X.
+MARKER_X = {"wtj_real_drive": 2000.0,
+            "2025_10_29_20_50_04_2T3MWRFVXLW056972profacc_test": 1000.0,
+            "2026_10_29_14_31_02_2T3MWRFVXLW056972profaccradar": 1000.0,
+            "2026_10_23_16_53_49_2T3MWRFVXLW056972profaccradar": 10000.0}
+DEFAULT_MARKER_X = 2000.0
+
+# Short names for plot titles and the report (the bag file names are long)
+BAG_LABELS = {"wtj_real_drive": "WTJ real drive",
+              "2025_10_29_20_50_04_2T3MWRFVXLW056972profacc_test": "Stop-and-go test (2025-10-29)",
+              "2026_10_29_14_31_02_2T3MWRFVXLW056972profaccradar": "Stop-and-go (2026-10-29)",
+              "2026_10_23_16_53_49_2T3MWRFVXLW056972profaccradar": "Fast mixed (2026-10-23)"}
+
+
+def marker_x_for(source):
+    """Throughput marker position (m) for a run source (bag name or 'sine')."""
+    return MARKER_X.get(source, DEFAULT_MARKER_X)
+
+
+def bag_label(source):
+    """Short display name of a bag (the bag name itself when it has none)."""
+    return BAG_LABELS.get(source, source)
+
+
+def repair_csv(path):
+    """
+    Make a results table readable after a crash: drop the NUL padding a crash
+    can leave at the end of a file, and a last line that was only partly
+    written. Returns the number of bytes removed (0 if the file was fine).
+    """
+    path = Path(path)
+    if not path.is_file():
+        return 0
+    data = path.read_bytes()
+    fixed = data.replace(b"\x00", b"")
+    if fixed and not fixed.endswith(b"\n"):
+        fixed = fixed[:fixed.rfind(b"\n") + 1]
+    if fixed != data:
+        path.write_bytes(fixed)
+        print(f"Repaired {path} (removed {len(data) - len(fixed)} bytes of crash damage)")
+    return len(data) - len(fixed)
+
+
 TIMESERIES_HEADER = "vehicle,type,ghost,time_s,position_m,velocity_mps,acceleration_mps2"
 
 

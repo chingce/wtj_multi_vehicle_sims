@@ -21,8 +21,9 @@ from run_io import add_run_arguments, load_run, resolve_runs
 
 # The leader (near-black) and IDM (gray) are neutral: the reference and the background traffic.
 # Smart controllers use the same colors as series.py.
-TYPE_COLORS = {"lead": "#0b0b0b", "WTJ": "blue", "WTJ2": "#1baf7a", "WTJ3": "#eda100", "WTJ4": "#008300",
-               "TG": "red", "IDM": "#8a8985"}
+TYPE_COLORS = {"lead": "#0b0b0b", "WTJ0": "#2a78d6", "WTJ1": "#1baf7a", "WTJ2": "#6250d6", "WTJ3": "#008300",
+               "WTJ4": "#eda100",
+               "TG": "red", "STG": "darkred", "IDM": "#8a8985"}
 BAR_ALPHA = 0.6     # Opacity of the real cars' work bars
 GHOST_ALPHA = 0.2   # Opacity of the ghost work bars behind them
 
@@ -32,7 +33,7 @@ def color(vtype):
 
 
 def title_for(run):
-    """Run name plus fixed/variable mass, e.g. '..._realRun_n100_p0.5, fixed mass'."""
+    """Run name plus fixed/variable mass, e.g. '..._wtj_real_drive_n100_p0.5, fixed mass'."""
     return f"{run.name}, {'variable' if run.variable_mass else 'fixed'} mass{run.collision_note()}"
 
 

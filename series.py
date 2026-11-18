@@ -6,20 +6,37 @@ A run's series label is its smart controller with default parameters ("WTJ3"),
 or its controller_params from runs.csv when any were changed ("WTJ3 gmin=5").
 
 Panels:
-  1. "Controllers": every smart controller at default parameters (WTJ, WTJ2, WTJ3, WTJ4, TG).
+  1. "Controllers": every smart controller at default parameters (WTJ0-WTJ4, TG).
   2. One "<controller> variants" panel per controller that has runs with changed
      parameters: the default line again, plus one line per variant.
 Splitting them keeps each panel at three or four series, so the colors stay
 distinguishable (checked with the dataviz palette validator).
 """
 
-CONTROLLER_COLORS = {"WTJ": "#2a78d6", "WTJ2": "#1baf7a", "WTJ3": "#eda100", "WTJ4": "#008300", "TG": "#e34948"}
-CONTROLLER_MARKERS = {"WTJ": "o", "WTJ2": "s", "WTJ3": "D", "WTJ4": "p", "TG": "^"}
+CONTROLLER_COLORS = {"WTJ0": "#2a78d6", "WTJ1": "#1baf7a", "WTJ2": "#6250d6", "WTJ3": "#008300",
+                     "WTJ4": "#eda100", "TG": "#e34948", "STG": "#8f1d1b"}
+CONTROLLER_MARKERS = {"WTJ0": "o", "WTJ1": "s", "WTJ2": "v", "WTJ3": "p", "WTJ4": "D", "TG": "^", "STG": "<"}
 # Variant lines (variants panel), in order of first appearance; kept
 # off the controller colors so a color means one thing across panels
-VARIANT_COLORS = ["#6250d6", "#e87ba4", "#9a3412"]
-VARIANT_MARKERS = ["v", "P", "h"]
+VARIANT_COLORS = ["#e87ba4", "#9a3412", "#0e7490"]
+VARIANT_MARKERS = ["P", "h", "X"]
 FALLBACK_COLOR = "#7a7974"
+
+# Runs that finished but had a smart car inside the 5 m safe gap (runs.csv
+# "unsafe" column) get an open ring around their point, in this ink color
+UNSAFE_RING = dict(marker="o", s=330, facecolors="none", edgecolors="#c2410c", linewidths=2.0, zorder=5)
+UNSAFE_LABEL = "smart car within 5 m of the car ahead"
+
+
+def is_unsafe(row):
+    """True for a run that finished but had a smart car inside the safe gap (collisions are handled apart)."""
+    return bool(row and row.get("unsafe")) and not row.get("collision")
+
+
+def unsafe_handle():
+    from matplotlib.lines import Line2D
+    return Line2D([], [], marker="o", linestyle="", markersize=12, markerfacecolor="none",
+                  markeredgecolor=UNSAFE_RING["edgecolors"], markeredgewidth=2, label=UNSAFE_LABEL)
 
 
 def is_secondary(label):

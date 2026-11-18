@@ -24,7 +24,7 @@ from controllers import CONTROLLERS, SMART_CONTROLLERS, make_controller
 from metrics import total_positive_work
 from vehicles import Vehicle
 
-HOST_TYPES = SMART_CONTROLLERS   # Only vehicles running one of these controllers (WTJ, WTJ2, WTJ3, WTJ4) get ghosts
+HOST_TYPES = SMART_CONTROLLERS   # Only vehicles running one of these controllers (WTJ0-WTJ4) get ghosts
 DEFAULT_GHOSTS = ("TG",)    # Ghost controllers used when ghosts are turned on without a list
 
 

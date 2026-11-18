@@ -1,0 +1,22 @@
+\begin{table}[htbp]
+\centering
+\small
+\caption{The final controller (STG, $\lambda=2$, $\tau=2.5$\,s) against the alternatives, by penetration rate $p$: change in work and flow from the all-IDM baseline (\%), averaged over the four drives. TG: time gap controller, $\tau=2.5$\,s. WTJ4: WTJSoftLowerBound, $\beta=0.25$. $\beta=1$: WTJSoftLowerBound, $\beta=1$. Last row: runs (of 16) in which a smart car came closer than 5\,m.}
+\label{tab:compare}
+\begin{tabular}{lrrrrrrrr}
+\toprule
+ & \multicolumn{4}{c}{Work (\%)} & \multicolumn{4}{c}{Flow (\%)} \\
+\cmidrule(lr){2-5}\cmidrule(lr){6-9}
+$p$ & TG & WTJ4 & $\beta=1$ & \textbf{STG} & TG & WTJ4 & $\beta=1$ & \textbf{STG} \\
+\midrule
+0.25 & $-$12.8 & $-$29.8 & $-$38.8 & \textbf{$-$26.8} & $+$9.0 & $+$6.4 & $+$10.2 & \textbf{$+$13.4} \\
+0.5 & $-$38.3 & $-$50.7 & $-$62.3 & \textbf{$-$49.7} & $+$11.3 & $-$0.5 & $+$2.0 & \textbf{$+$10.4} \\
+0.75 & $-$54.8 & $-$65.8 & $-$72.9 & \textbf{$-$63.9} & $+$5.8 & $-$9.8 & $-$8.0 & \textbf{$+$3.2} \\
+1 & $-$67.4 & $-$73.3 & $-$77.9 & \textbf{$-$72.1} & $+$1.8 & $-$16.3 & $-$14.3 & \textbf{$-$0.6} \\
+\midrule
+Mean & $-$43.3 & $-$54.9 & $-$63.0 & \textbf{$-$53.1} & $+$7.0 & $-$5.0 & $-$2.5 & \textbf{$+$6.6} \\
+\midrule
+$<$5\,m & 12/16 & 0/16 & 0/16 & \textbf{0/16} &  &  &  &  \\
+\bottomrule
+\end{tabular}
+\end{table}

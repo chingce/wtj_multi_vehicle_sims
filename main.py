@@ -9,17 +9,33 @@ from pathlib import Path
 
 import numpy as np
 
-from controllers import CONTROLLERS, SMART_CONTROLLERS, controller_param_names
+from controllers import (COMPARISON_CONTROLLERS, CONTROLLERS, SMART_CONTROLLERS, controller_param_names,
+                         preset_label)
 from ghosts import DEFAULT_GHOSTS, compare_ghosts
 from lead import load_lead_from_bag
 from metrics import positive_work_per_car
-from run_io import write_run_csvs
+from run_io import repair_csv, write_run_csvs
 from sim import CollisionError, sim
 
 ROOT = Path(__file__).parent
 BAGS_DIR = ROOT / "bags"
 VARIABLE_MASS_OUTPUT_DIR = ROOT / "variable_mass_results"
 RESULTS_DIR = ROOT / "results"
+SAFE_GAP = 5.0       # m: a smart car closer than this to the car ahead marks the run unsafe
+GAP_TOLERANCE = 0.01 # m: WTJ settles at exactly gmin = 5 m; don't flag rounding at that edge
+
+
+def gap_summary(data, platoon, smart):
+    """
+    Closest bumper-to-bumper approach over the run. Returns
+    (min gap of any follower, its car type, min gap of a `smart` car or None).
+    """
+    gaps = data[:-1, 0, :] - data[1:, 0, :]     # row i: follower i+1's gap to the car ahead
+    per_car = gaps.min(axis=1)
+    worst = int(per_car.argmin())
+    smart_rows = [i for i, v in enumerate(platoon) if v.type == smart]
+    smart_min = float(per_car[smart_rows].min()) if smart_rows else None
+    return float(per_car[worst]), platoon[worst].type, smart_min
 
 def append_rows(path, fieldnames, rows):
     """
@@ -28,6 +44,7 @@ def append_rows(path, fieldnames, rows):
     the file is rewritten with the new columns, left blank for the old rows.
     """
     path.parent.mkdir(parents=True, exist_ok=True)
+    repair_csv(path)          # a crash during an earlier append can leave NUL bytes or a cut-off line
     if path.exists():
         with open(path, newline="") as f:
             reader = csv.DictReader(f)
@@ -44,6 +61,8 @@ def append_rows(path, fieldnames, rows):
             fieldnames = old_fields
         with open(path, "a", newline="") as f:
             csv.DictWriter(f, fieldnames=fieldnames).writerows(rows)
+            f.flush()
+            os.fsync(f.fileno())
     else:
         with open(path, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -52,7 +71,7 @@ def append_rows(path, fieldnames, rows):
 
 
 def format_params(controller_params):
-    """{"WTJ": {"c": 0.2}} -> "WTJ c=0.2" (empty string for defaults)."""
+    """{"WTJ3": {"c": 0.2}} -> "WTJ3 c=0.2" (empty string for defaults)."""
     return "; ".join(f"{name} " + " ".join(f"{k}={v:g}" for k, v in params.items())
                      for name, params in controller_params.items() if params)
 
@@ -122,37 +141,47 @@ def run_one(args, bag_path, stamp, rate, results_dir):
     # e.g. "_WTJ-c0.2" when WTJ's c was changed; nothing when all defaults
     param_tag = "".join(f"_{name}-" + "-".join(f"{k}{v:g}" for k, v in p.items())
                         for name, p in args.controller_params.items() if p)
-    smart_tag = "" if args.smart == "WTJ" else f"_{args.smart}"   # e.g. "_WTJ3"; nothing for plain WTJ
+    smart_tag = f"_{args.smart}"   # e.g. "_WTJ3"
     run_name = f"{stamp}_{source}_n{args.n_vehicles}_p{rate:g}_{args.base}{smart_tag}{param_tag}"
     run_fields = ["run", "source", "n_vehicles", "penetration_rate", "smart_controller", "base_controller",
                   "n_wtj", "n_base", "duration_s", "dt", "variable_mass", "avg_positive_work",
-                  "controller_params", "seed", "collision"]
+                  "controller_params", "seed", "collision", "unsafe", "min_gap_smart_m", "min_gap_m",
+                  "min_gap_type", "smart_definition"]
     run_row = {"run": run_name, "source": source, "n_vehicles": args.n_vehicles,
                "penetration_rate": rate, "smart_controller": args.smart,
                "base_controller": args.base, "dt": args.dt, "variable_mass": args.variable_mass,
                "controller_params": params or "defaults",
-               "seed": "" if args.seed is None else args.seed, "collision": ""}
+               "seed": "" if args.seed is None else args.seed, "collision": "",
+               "smart_definition": preset_label(args.smart, args.controller_params.get(args.smart))}
 
     try:
         data, time, platoon = run_sim(args, lead_vel, rate)
     except CollisionError as crash:
         # The run is stopped: record what happened in runs.csv, and write nothing else
         lines.append(f"[{run_name}] STOPPED: {crash}")
-        appends.append(("runs.csv", run_fields, [{**run_row, "collision": str(crash)}]))
+        appends.append(("runs.csv", run_fields, [{**run_row, "collision": str(crash),
+                                                  "unsafe": f"collision ({crash.car_type} car {crash.car})"}]))
         return lines, appends
 
     duration = len(time) * args.dt
     work = positive_work_per_car(data, args.dt)
     n_wtj = sum(v.type == args.smart for v in platoon)
     n_base = len(platoon) - n_wtj
+    min_gap, min_gap_type, smart_gap = gap_summary(data, platoon, args.smart)
+    unsafe = ""
+    if smart_gap is not None and smart_gap < SAFE_GAP - GAP_TOLERANCE:
+        unsafe = f"{args.smart} car within {smart_gap:.2f} m (< {SAFE_GAP:g} m)"
 
     lines.append(f"[{run_name}] {len(platoon)} vehicles, {duration:g}s "
                  f"({n_wtj} {args.smart}, {n_base} {args.base}), "
                  f"{'variable' if args.variable_mass else 'fixed'} mass dynamics, "
-                 f"avg positive work {work.mean():.5f} m^2/s^3")
+                 f"avg positive work {work.mean():.5f} m^2/s^3, closest gap {min_gap:.2f} m ({min_gap_type})"
+                 + (f"  ** UNSAFE: {unsafe}" if unsafe else ""))
     appends.append(("runs.csv", run_fields,
                     [{**run_row, "n_wtj": n_wtj, "n_base": n_base, "duration_s": duration,
-                      "avg_positive_work": work.mean()}]))
+                      "avg_positive_work": work.mean(), "unsafe": unsafe,
+                      "min_gap_smart_m": "" if smart_gap is None else round(smart_gap, 3),
+                      "min_gap_m": round(min_gap, 3), "min_gap_type": min_gap_type}]))
     appends.append(("cars.csv", ["run", "car", "type", "mass_kg", "variable_mass", "avg_positive_work"],
                     [{"run": run_name, "car": v.id, "type": v.type, "mass_kg": round(v.mass, 1),
                       "variable_mass": args.variable_mass, "avg_positive_work": w}
@@ -188,14 +217,19 @@ def main():
     parser.add_argument("--jobs", type=int, default=0,
                         help="how many simulations to run at once when there are several "
                              "(rates x bags); default: all of them, up to the CPU count. 1 = one at a time")
-    parser.add_argument("--smart", choices=list(SMART_CONTROLLERS) + ["TG"], default="WTJ",
-                        help="controller run by the --penetration-rate share of vehicles (default WTJ). "
-                             "TG is allowed for comparison; TG cars get no ghosts")
+    parser.add_argument("--smart", choices=list(SMART_CONTROLLERS) + list(COMPARISON_CONTROLLERS), default="WTJ0",
+                        help="controller run by the --penetration-rate share of vehicles (default WTJ0; "
+                             "see controllers.PRESETS for what each WTJ0-WTJ4 is). "
+                             "TG and STG are allowed for comparison; they get no ghosts")
     parser.add_argument("--base", choices=[c for c in CONTROLLERS if c not in SMART_CONTROLLERS], default="IDM",
-                        help="controller for the vehicles that don't run WTJ (default IDM)")
+                        help="controller for the vehicles that don't run --smart (default IDM)")
     parser.add_argument("--length", type=float, default=360,
                         help="sim length in seconds (synthetic lead only)")
     parser.add_argument("--dt", type=float, default=0.05)
+    parser.add_argument("--results-dir",
+                        help="folder for runs.csv, cars.csv, ghosts.csv and runs/ (default results/, or "
+                             "variable_mass_results/results/ with --variable-mass). Use a folder outside "
+                             "OneDrive for big sweeps: each full-bag run writes ~100-200 MB")
     parser.add_argument("--variable-mass", action="store_true",
                         help="scale each vehicle's acceleration response by its sampled mass; "
                              "outputs go to variable_mass_results/results/")
@@ -209,7 +243,7 @@ def main():
                         help="seconds into the bag to start the lead profile")
     parser.add_argument("--end", type=float, help="seconds into the bag to end the lead profile")
     parser.add_argument("--ghosts", nargs="*", choices=list(CONTROLLERS), metavar="CTRL",
-                        help="give every WTJ car a ghost for each listed controller "
+                        help="give every smart car a ghost for each listed controller "
                              f"({', '.join(CONTROLLERS)}); with no list, one "
                              f"{' + '.join(DEFAULT_GHOSTS)} ghost. Off unless given.")
     for name in CONTROLLERS:
@@ -221,6 +255,8 @@ def main():
     global RESULTS_DIR
     if args.variable_mass:
         RESULTS_DIR = VARIABLE_MASS_OUTPUT_DIR / "results"
+    if args.results_dir:
+        RESULTS_DIR = Path(args.results_dir)
 
     args.controller_params = {name: parse_params(name, getattr(args, name.lower()), parser)
                               for name in CONTROLLERS}

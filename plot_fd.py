@@ -5,9 +5,9 @@ colored by the penetration rate of the run it came from.
 Each point is one box from density_flow.py. Box values are read from a run's
 density_flow_dx<dx>_dT<dT>.csv when it exists, and computed and saved otherwise.
 
-    uv run plot_fd.py --all --match realRun          # every realRun run, one diagram
+    uv run plot_fd.py --all --match wtj_real_drive          # every wtj_real_drive run, one diagram
     uv run plot_fd.py RUN_A RUN_B RUN_C              # chosen runs
-    uv run plot_fd.py --all --match realRun --dx 500 --dT 60 --name realRun_sweep
+    uv run plot_fd.py --all --match wtj_real_drive --dx 500 --dT 60 --name wtj_real_drive_sweep
 
 --match keeps only runs whose name contains that text; use it so one diagram
 doesn't mix different bags or controller settings. The plot goes to

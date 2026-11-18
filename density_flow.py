@@ -116,6 +116,29 @@ def density_and_flow_for(run_dir, dx=DEFAULT_DX, dT=DEFAULT_DT):
     return result
 
 
+def throughput(run_dir, x):
+    """
+    (veh/hr past x, cars that reached x, cars in the run), cached per run.
+    Cars that never reach x are left out of the count and the time span.
+    """
+    cache = run_dir / f"throughput_x{x:g}.csv"
+    if cache.is_file():
+        with open(cache, newline="") as f:
+            row = next(csv.DictReader(f))
+        return float(row["veh_per_hr"]), int(row["reached"]), int(row["cars"])
+    run = load_run(run_dir)
+    pos = run.position[run.rows(ghost=False)][1:]          # followers only
+    reached = (pos >= x).any(axis=1)
+    times = np.array([run.time[np.argmax(pos[k] >= x)] for k in np.nonzero(reached)[0]])
+    span = times.max() - times.min() if len(times) > 1 else np.nan
+    rate = (len(times) - 1) / span * 3600 if span and span > 0 else np.nan
+    with open(cache, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["veh_per_hr", "reached", "cars"])
+        writer.writerow([rate, int(reached.sum()), len(pos)])
+    return rate, int(reached.sum()), len(pos)
+
+
 def main():
     parser = argparse.ArgumentParser(description="Compute density and flow over boxes for runs.")
     add_run_arguments(parser, show=False)

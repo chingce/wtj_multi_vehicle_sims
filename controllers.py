@@ -50,7 +50,7 @@ class IDMController(Controller):
 class TimeGapController(Controller):
     name = "TG"
 
-    def __init__(self, alpha=1.0, tau=2.5, gmin=15, lam=0.1):
+    def __init__(self, alpha=1.0, tau=2.5, gmin=5, lam=0.1):
         self.alpha = alpha
         self.tau = tau
         self.gmin = gmin
@@ -59,10 +59,33 @@ class TimeGapController(Controller):
     def cmd_accel(self, sn, vn, sndot):
         return min(1.5, max(-3,self.alpha * (sn - self.tau*vn - self.gmin) + self.lam*sndot))
 
-class WTJController(Controller):
-    name = "WTJ"
+class SpecialTimeGapController(Controller):
+    """
+    TG with braking-only damping: lam * sndot is applied only when closing in
+    (sndot < 0), as in the WTJ controllers, so it doesn't speed up just because
+    the car ahead does. Preset STG.
+    """
+    name = "STG"
 
-    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=0.5, c=0.1):
+    def __init__(self, alpha=1.0, tau=2.5, gmin=5, lam=2):
+        self.alpha = alpha
+        self.tau = tau
+        self.gmin = gmin
+        self.lam = lam
+
+    def cmd_accel(self, sn, vn, sndot):
+        return min(1.5, max(-3,self.alpha * (sn - self.tau*vn - self.gmin) + min(0,self.lam*sndot)))
+
+
+class WTJOriginal(Controller):
+    """
+    The original WTJ controller: a_star (zero at 30 m/s, larger at low speed)
+    clamped to [al, au], the time-gap accelerations for tau_max and tau_min.
+    Presets WTJ0 (lam = 0.5) and WTJ1 (lam = 2) in PRESETS.
+    """
+    name = "WTJOriginal"
+
+    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=5, lam=0.5, c=0.1):
         self.alpha = alpha
         self.tau_min = tau_min
         self.tau_max = tau_max
@@ -80,22 +103,11 @@ class WTJController(Controller):
         a_star = self.c * sqrt(1/(vn + 0.25)) - (self.c * sqrt(1/(30 + 0.25)))
         return min(1.5, max(-3,min(max(al, a_star), au)))
 
-class WTJ2Controller(WTJController):
-    """
-    The regular WTJ controller with lam = 2 instead of 0.5: same formula
-    (a_star clamped to [al, au]), stronger reaction to closing in on the car
-    ahead. Every parameter can still be changed with --wtj2.
-    """
-    name = "WTJ2"
 
-    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=2.0, c=0.1):
-        super().__init__(alpha=alpha, tau_min=tau_min, tau_max=tau_max, gmin=gmin, lam=lam, c=c)
-
-
-class WTJ3Controller(WTJController):
+class WTJSoftLowerBound(WTJOriginal):
     """
-    WTJ without the hard lower bound al. Where WTJ picks a_star clamped to
-    [al, au], WTJ3 targets a blend of al (the tau_max time-gap acceleration)
+    WTJ without the hard lower bound al. Where WTJOriginal picks a_star clamped
+    to [al, au], this targets a blend of al (the tau_max time-gap acceleration)
     and a_star,
 
         a_target = beta * al + (1 - beta) * a_star,
@@ -103,14 +115,13 @@ class WTJ3Controller(WTJController):
     capped above by au only. So it does not chase every speed-up of the car
     ahead (smoother, less work), while beta still pulls it toward the tau_max
     gap: it closes large gaps and starts braking earlier when inside that gap.
-    beta = 0 would ignore al entirely.
-
-    Defaults: lam = 3 (lam = 0.5 let WTJ3 crash on realRun when closing on a
-    stopping car) and beta = 0.25. WTJ4 is the same with beta = 0.1.
+    beta = 0 ignores al entirely. lam = 3 by default (lam = 0.5 crashed on
+    wtj_real_drive when closing on a stopping car).
+    Presets WTJ2 (beta = 0), WTJ3 (beta = 0.1) and WTJ4 (beta = 0.25) in PRESETS.
     """
-    name = "WTJ3"
+    name = "WTJSoftLowerBound"
 
-    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=3.0, c=0.1, beta=0.25):
+    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=5, lam=3.0, c=0.1, beta=0.25):
         super().__init__(alpha=alpha, tau_min=tau_min, tau_max=tau_max, gmin=gmin, lam=lam, c=c)
         self.beta = beta
 
@@ -126,24 +137,39 @@ class WTJ3Controller(WTJController):
         return min(1.5, max(-3,min(a_target, au)))
 
 
-class WTJ4Controller(WTJ3Controller):
-    """
-    WTJ3 with a lighter pull toward al: beta = 0.1 instead of 0.25. Everything
-    else (formula, lam = 3, other defaults) is the same as WTJ3; every parameter
-    can still be changed with --wtj4.
-    """
-    name = "WTJ4"
-
-    def __init__(self, alpha=1.0, tau_min=2.0, tau_max=3.0, gmin=15, lam=3.0, c=0.1, beta=0.1):
-        super().__init__(alpha=alpha, tau_min=tau_min, tau_max=tau_max, gmin=gmin, lam=lam, c=c, beta=beta)
-
-
-# Controllers by name, for picking one from a string (e.g. on the command line)
-CONTROLLERS = {cls.name: cls for cls in (TimeGapController, WTJController, WTJ2Controller, WTJ3Controller,
-                                         WTJ4Controller, IDMController)}
+# Named controllers: name -> (class, parameters that differ from the class
+# defaults). A preset is just its class with those parameters; the name is the
+# vehicle type in the CSVs and plots, and preset_label() spells out the parameters.
+PRESETS = {
+    "IDM":  (IDMController, {}),
+    "TG":   (TimeGapController, {}),
+    "STG":  (SpecialTimeGapController, {}),
+    "WTJ0": (WTJOriginal, {}),                       # lam = 0.5
+    "WTJ1": (WTJOriginal, {"lam": 2.0}),
+    "WTJ2": (WTJSoftLowerBound, {"beta": 0.0}),      # lam = 3
+    "WTJ3": (WTJSoftLowerBound, {"beta": 0.1}),      # lam = 3
+    "WTJ4": (WTJSoftLowerBound, {"beta": 0.25}),     # lam = 3
+}
+CONTROLLERS = {name: cls for name, (cls, _) in PRESETS.items()}   # name -> class
 
 # Our controllers: the ones the penetration rate assigns, and that get ghosts
-SMART_CONTROLLERS = ("WTJ", "WTJ2", "WTJ3", "WTJ4")
+SMART_CONTROLLERS = ("WTJ0", "WTJ1", "WTJ2", "WTJ3", "WTJ4")
+# Other controllers --smart may assign, for comparison (no ghosts)
+COMPARISON_CONTROLLERS = ("TG", "STG")
+
+
+def preset_params(name, params=None):
+    """Every parameter of preset `name`, with `params` overrides applied, e.g. {'alpha': 1.0, ..., 'beta': 0.1}."""
+    cls, preset = PRESETS[name]
+    full = {p.name: p.default for p in signature(cls).parameters.values()}
+    return {**full, **preset, **(params or {})}
+
+
+def preset_label(name, params=None):
+    """'WTJ3 = WTJSoftLowerBound(alpha=1, tau_min=2, tau_max=3, gmin=5, lam=3, c=0.1, beta=0.1)'."""
+    cls = PRESETS[name][0]
+    args = ", ".join(f"{k}={v:g}" for k, v in preset_params(name, params).items())
+    return f"{name} = {cls.__name__}({args})"
 
 
 def controller_param_names(name):
@@ -154,11 +180,14 @@ def controller_param_names(name):
 def make_controller(name, params=None):
     """
     Build the controller called `name` (a key of CONTROLLERS), overriding any of
-    its default parameters with `params`, e.g. make_controller("WTJ", {"c": 0.2}).
+    its default parameters with `params`, e.g. make_controller("WTJ3", {"c": 0.2}).
+    The preset's parameters (PRESETS) are applied first, then `params`.
     """
     params = params or {}
     unknown = sorted(set(params) - set(controller_param_names(name)))
     if unknown:
         raise ValueError(f"{name} controller has no parameter(s) {unknown}; "
                          f"it takes {controller_param_names(name)}")
-    return CONTROLLERS[name](**params)
+    controller = CONTROLLERS[name](**preset_params(name, params))
+    controller.name = name   # the preset name ("WTJ3") is the vehicle type, not the class name
+    return controller

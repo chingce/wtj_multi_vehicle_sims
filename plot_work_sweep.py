@@ -1,9 +1,9 @@
 """
 Average positive work against penetration rate, read from results/runs.csv.
 
-    uv run plot_work_sweep.py --source realRun
-    uv run plot_work_sweep.py --source realRun --base IDM --seed 7
-    uv run plot_work_sweep.py --results variable_mass_results/results/runs.csv --source realRun
+    uv run plot_work_sweep.py --source wtj_real_drive
+    uv run plot_work_sweep.py --source wtj_real_drive --base IDM --seed 7
+    uv run plot_work_sweep.py --results variable_mass_results/results/runs.csv --source wtj_real_drive
 
 Panels (see series.py): the smart controllers at default parameters (WTJ,
 WTJ3, WTJ4, TG), then one panel per controller that also has runs with changed
@@ -28,7 +28,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 from matplotlib.lines import Line2D
 
-from series import is_secondary, panels, series_label
+from series import UNSAFE_RING, is_secondary, is_unsafe, panels, series_label, unsafe_handle
 
 ROOT = Path(__file__).parent
 
@@ -79,12 +79,16 @@ def place_end_labels(ax, labels, min_gap=0.045):
 def plot_sweep(rows, title, only=None):
     work = defaultdict(lambda: defaultdict(list))   # label -> p -> [avg work]
     crashed = defaultdict(set)                       # label -> {p} stopped by a collision
+    unsafe = defaultdict(set)                        # label -> {p} with a smart car inside 5 m
     baseline = []                                     # p = 0 runs, shared by all lines
     for r in rows:
         p = float(r["penetration_rate"])
         if r.get("collision"):
             crashed[series_label(r)].add(p)
-        elif p == 0:
+            continue
+        if is_unsafe(r):
+            unsafe[series_label(r)].add(p)
+        if p == 0:
             baseline.append(float(r["avg_positive_work"]))
         else:
             work[series_label(r)][p].append(float(r["avg_positive_work"]))
@@ -117,6 +121,9 @@ def plot_sweep(rows, title, only=None):
             for p in points:                   # individual runs, when repeated
                 if len(points[p]) > 1:
                     ax.scatter([p] * len(points[p]), points[p], s=14, color=color, alpha=0.5, zorder=2)
+            flagged = sorted(p for p in unsafe[label] if p in points)
+            if flagged:
+                ax.scatter(flagged, [np.mean(points[p]) for p in flagged], **UNSAFE_RING)
             if crashed[label]:
                 ax.scatter([p + dodge for p in sorted(crashed[label])], [0] * len(crashed[label]), marker="x", s=70,
                            color=color, linewidths=2.2, zorder=4, clip_on=False)
@@ -125,7 +132,6 @@ def plot_sweep(rows, title, only=None):
         place_end_labels(ax, end_labels)
 
         ax.set_xlim(-0.03, 1.3)
-        ax.set_ylim(bottom=0)
         ax.set_xticks([0, 0.25, 0.5, 0.75, 1])
         ax.grid(color=GRID, linewidth=0.8, zorder=0)
         for side in ("top", "right"):
@@ -139,6 +145,8 @@ def plot_sweep(rows, title, only=None):
         if any(crashed[label] for label, *_ in series):
             handles.append(Line2D([], [], marker="x", linestyle="", color=TEXT_SECONDARY, markersize=8,
                                   markeredgewidth=2, label="stopped by a collision"))
+        if any(unsafe[label] for label, *_ in series):
+            handles.append(unsafe_handle())
         ax.legend(handles=handles, frameon=False, loc="upper right")
     axes[0][0].set_ylabel("Average positive work, all followers (m²/s³)")
     fig.suptitle(title, x=0.01, ha="left", fontsize=12)
@@ -149,7 +157,7 @@ def plot_sweep(rows, title, only=None):
 def main():
     parser = argparse.ArgumentParser(description="Average positive work vs penetration rate, by smart controller.")
     parser.add_argument("--results", default=str(ROOT / "results" / "runs.csv"), help="runs.csv to read")
-    parser.add_argument("--source", help="bag name (or 'sine') to keep, e.g. realRun")
+    parser.add_argument("--source", help="bag name (or 'sine') to keep, e.g. wtj_real_drive")
     parser.add_argument("--base", help="only runs with this base controller (IDM or TG)")
     parser.add_argument("--n-vehicles", type=int, help="only runs with this many followers")
     parser.add_argument("--seed", type=int, help="only runs made with this --seed")
@@ -171,6 +179,8 @@ def main():
         parser.error(f"no matching runs with a smart_controller column in {args.results}")
     for r in rows:
         status = f"STOPPED ({r['collision']})" if r.get("collision") else f"avg work {float(r['avg_positive_work']):.4f}"
+        if is_unsafe(r):
+            status += f"  UNSAFE: {r['unsafe']}"
         print(f"  {r['run']}: p={float(r['penetration_rate']):g} {series_label(r)}: {status}")
 
     filters = [args.source or "all", args.base, f"n{args.n_vehicles}" if args.n_vehicles else None,
@@ -182,7 +192,7 @@ def main():
              f"other cars {', '.join(sorted(o for o in others if o))}; "
              f"{len(rows) - n_stopped} runs" + (f", {n_stopped} stopped by a collision" if n_stopped else ""))
 
-    out_dir = Path(args.results).resolve().parent.parent / "plots" / "work_sweep"
+    out_dir = ROOT / "plots" / "work_sweep"
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / f"{name}.png"
     plot_sweep(rows, title, args.series).savefig(path, dpi=150, bbox_inches="tight", facecolor=SURFACE)

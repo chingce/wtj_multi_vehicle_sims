@@ -25,7 +25,7 @@ class CollisionError(RuntimeError):
 
 def sim(n_vehicles: int, penetration_rate: float, sim_length_seconds: float = None, dt: float = .05,
         lead_vel: np.ndarray = None, ghosts=None, controller_params: dict = None,
-        variable_mass: bool = False, base_controller: str = "IDM", smart_controller: str = "WTJ",
+        variable_mass: bool = False, base_controller: str = "IDM", smart_controller: str = "WTJ0",
         stop_on_collision: bool = True):
     """
     Simulate the traffic flow
@@ -39,15 +39,15 @@ def sim(n_vehicles: int, penetration_rate: float, sim_length_seconds: float = No
     lead_vel: Optional lead vehicle speed at each time step (m/s), e.g. from lead.load_lead_from_bag.
         Defaults to a synthetic sine wave.
     ghosts: Ghost controllers to attach to every WTJ vehicle, as names from controllers.CONTROLLERS
-        (e.g. ["TG"] or ["TG", "WTJ"]). True means the default, one TG ghost. None (default) means
+        (e.g. ["TG"] or ["TG", "WTJ0"]). True means the default, one TG ghost. None (default) means
         no ghosts. Ghosts never affect traffic; compare them with ghosts.compare_ghosts.
     controller_params: Optional overrides of controller defaults, keyed by controller name,
-        e.g. {"WTJ": {"c": 0.2}, "TG": {"tau": 2.0}}. Applies to real vehicles and ghosts alike.
+        e.g. {"WTJ3": {"c": 0.2}, "TG": {"tau": 2.0}}. Applies to real vehicles and ghosts alike.
     variable_mass: If True, each vehicle's sampled mass scales its acceleration response.
     base_controller: Controller for the vehicles that don't run WTJ, a name from
         controllers.CONTROLLERS (default "IDM").
     smart_controller: Our controller, run by the penetration_rate share of vehicles:
-        "WTJ" (default), "WTJ2", "WTJ3" or "WTJ4" (see controllers.SMART_CONTROLLERS).
+        "WTJ0" (default) to "WTJ4" (see controllers.PRESETS).
         These vehicles are the ones that get ghosts.
     stop_on_collision: If True (default), stop and raise CollisionError as soon as any
         car's gap to the car ahead reaches 0. If False, cars pass through each other.

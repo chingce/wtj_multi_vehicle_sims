@@ -1,0 +1,24 @@
+\begin{table}[htbp]
+\centering
+\footnotesize
+\caption{Every candidate controller, in the order it was tried. Each was run 16 times (4 drives $\times$ 4 penetration rates). Coll.: runs that ended in a collision. $<$5\,m: runs in which a smart car came closer than the 5\,m minimum gap. Min gap: closest approach of any smart car. Work and flow: change in \%, averaged over drives and penetration rates, against the all-IDM baseline and against TG ($\tau=2.5$\,s) at the same penetration rate; -- if any run crashed.}
+\label{tab:path}
+\setlength{\tabcolsep}{4pt}
+\begin{tabular}{llp{4.6cm}rrrrrrr}
+\toprule
+ & & & & & & \multicolumn{2}{c}{vs IDM (\%)} & \multicolumn{2}{c}{vs TG (\%)} \\
+\cmidrule(lr){7-8}\cmidrule(lr){9-10}
+Stage & Controller & What changed & Coll. & $<$5\,m & Min gap (m) & Work & Flow & Work & Flow \\
+\midrule
+1 & WTJ0 & original WTJ, $\lambda=0.5$ & 16/16 & 0/16 & -- & -- & -- & -- & -- \\
+1 & WTJ1 & stronger damping, $\lambda=2$ & 4/16 & 2/16 & 1.15 & -- & -- & -- & -- \\
+2 & WTJ2 & soft lower bound, $\beta=0$, $\lambda=3$ & 0/16 & 0/16 & 5.00 & $-$92.3 & $-$37.9 & $-$85.1 & $-$41.9 \\
+2 & WTJ3 & $\beta=0.1$ & 4/16 & 0/16 & 5.00 & -- & -- & -- & -- \\
+2 & WTJ4 & $\beta=0.25$ & 0/16 & 0/16 & 5.00 & $-$54.9 & $-$5.0 & $-$20.7 & $-$11.4 \\
+3 & WTJSoftLB & $\beta=1$ (best of the $\beta$ sweep) & 0/16 & 0/16 & 5.00 & $-$63.0 & $-$2.5 & $-$35.6 & $-$9.0 \\
+-- & TG & time gap, two-sided $\lambda=0.1$ (reference) & 0/16 & 12/16 & 0.78 & $-$43.3 & $+$7.0 & ref. & ref. \\
+4 & STG & TG with braking-only damping, $\lambda=0.1$ & 0/16 & 12/16 & 0.78 & $-$42.4 & $+$6.8 & $+$1.7 & $-$0.2 \\
+\textbf{4--6} & \textbf{STG (final)} & \textbf{braking-only $\lambda=2$, $\tau=2.5$\,s} & \textbf{0/16} & \textbf{0/16} & \textbf{5.00} & \textbf{$-$53.1} & \textbf{$+$6.6} & \textbf{$-$17.3} & \textbf{$-$0.4} \\
+\bottomrule
+\end{tabular}
+\end{table}
