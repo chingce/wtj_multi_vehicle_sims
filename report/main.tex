@@ -187,6 +187,29 @@ dashed line is the all-IDM baseline mean.}
 \end{figure}
 
 %======================================================================
+\section{Conclusions}
+\label{sec:conclusions}
+
+We consider the final controller, STG with $\lambda=2$ and $\tau=2.5$\,s, a success on all three
+measures.
+\begin{itemize}
+\item \textbf{Safety.} No STG car ever came closer than the 5\,m minimum gap, in any of the 16 runs. In
+  the all-IDM baseline, cars get as close as 3.9--4.05\,m, and TG brings a car to 0.78\,m in 12 of 16
+  runs.
+\item \textbf{Work.} STG cuts positive work by 53\% on average against the baseline: from 27\% at
+  $p=0.25$ to 72\% at $p=1$. In every drive and penetration rate it uses 13.5--23\% less work than TG at
+  the same time gap.
+\item \textbf{Flow.} Flow is comparable to the baseline and to TG: 6.6\% above the baseline on average,
+  and within 0.4\% of TG. At low penetration rates STG improves flow: 13.4\% above the baseline at
+  $p=0.25$ and 10.4\% at $p=0.5$. At $p=0.25$ that is more than TG, WTJ4 or the $\beta=1$ variant
+  (Table~\ref{tab:compare}), and about 4\% above TG on every drive at $p=0.25$
+  (Table~\ref{tab:final-tau2.5}). Only in an all-STG platoon does flow fall slightly, to 0.6\% below the
+  baseline.
+\end{itemize}
+These results come from a simple law with one structural change to a plain time gap controller: damping
+that acts only while the car is closing on the vehicle ahead.
+
+%======================================================================
 \section{Limitations}
 \begin{itemize}
 \item All results come from one random seed, four lead drives and one platoon size. A sweep over seeds is
