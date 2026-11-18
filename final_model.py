@@ -5,7 +5,7 @@ penetration rate. Missing simulations are run first.
 
     uv run final_model.py --results-dir C:/Users/me/wtj_results                 # tau = 2.5
     uv run final_model.py --results-dir ... --tau 2 2.5 3                         # several time gaps
-    uv run final_model.py --results-dir ... --plots-only --jobs 4
+    uv run final_model.py --results-dir ... --no-run --jobs 4
 
 Grids with one row per bag and one column per penetration rate:
 
@@ -38,7 +38,6 @@ avg_positive_work is that total divided by the run length.
 
 import argparse
 import csv
-import shutil
 from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 
@@ -257,7 +256,6 @@ def add_trajectories(ax, d, norm, linewidth=(0.35, 0.8)):
 
 def draw_report_figures(data, metrics, tau, lam, out, bag=REPORT_BAG):
     """report_time_space.png, report_fd.png, report_work.png for the report's final-controller section."""
-    label = bag_label(bag)
     # 1. Time-space: the all-IDM baseline, then STG at every penetration rate, one speed scale.
     #    (TG's diagrams look the same at this scale, so they are not drawn.)
     panels = [(BASELINE, 0.0, "All-IDM baseline")] + [("STG", p, f"STG, p = {p:g}") for p in RATES]
@@ -433,10 +431,6 @@ def run_tau(tau, lam, results, bags, jobs, sample):
     write_csv(small / "fd_boxes.csv", fd_all)
     write_csv(small / "work_per_vehicle.csv", veh_all)
 
-    for old in out.glob("*/"):          # per-(bag, p) figure folders of earlier versions
-        shutil.rmtree(old)
-    for old in out.glob("time_space_*.png"):   # every-bag time-space grids of earlier versions
-        old.unlink()
     for c in ("STG", "TG"):
         draw_work(data, metrics, bags, c, tau, out)
     draw_fd(data, bags, tau, out)
@@ -453,7 +447,7 @@ def main():
     parser.add_argument("--tau", type=float, nargs="+", default=[2.5], help="time gap(s) in s (default 2.5)")
     parser.add_argument("--lam", type=float, default=2.0, help="STG braking-only damping gain (default 2)")
     parser.add_argument("--bag", nargs="+", help="bag names (default: every bag in bags/)")
-    parser.add_argument("--plots-only", action="store_true", help="don't run missing simulations")
+    parser.add_argument("--no-run", action="store_true", help="don't run missing simulations")
     parser.add_argument("--jobs", type=int, default=4, help="parallel workers (simulations and figures)")
     parser.add_argument("--csv", action="store_true", help="also write the CSV tables (summary, boxes, per-vehicle "
                                                            "time series)")
@@ -464,7 +458,7 @@ def main():
     results = results_dir(args.results_dir)
     order = list(BAG_LABELS)   # report order: real drive first
     bags = sorted(args.bag or all_bags(), key=lambda b: order.index(b) if b in order else len(order))
-    if not args.plots_only:
+    if not args.no_run:
         cfgs = [c for tau in args.tau for c in configs(tau, args.lam)]
         n = ensure_runs(results, cfgs, bags, jobs=max(args.jobs, 8))
         print(f"{n} simulation(s) run")

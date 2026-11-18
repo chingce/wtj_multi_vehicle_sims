@@ -2,7 +2,14 @@
 
 First run export_matlab_controllers.m in MATLAB. It writes a CSV with the
 inputs and the MATLAB outputs for every test row. This script runs the Python
-timeGap and wtj on the same rows and reports every row where they disagree.
+controllers on the same rows and reports every row where they disagree:
+
+  timeGap  The Simulink time gap block (the law inside WTJ's a_l and a_u) is
+           alpha (s - tau v - gmin) + lam min(0, sndot), without saturation.
+           Saturated, that is the STG controller (SpecialTimeGapController),
+           so STG is checked against sat(timeGap). (The TG reference
+           controller damps in both directions and is not a Simulink block.)
+  wtj      WTJOriginal against the saturated Simulink WTJ output.
 
 Usage:
     python3 compare_controllers.py matlab_controller_outputs.csv
@@ -22,13 +29,6 @@ import numpy as np
 # controllers.py lives one folder up, at the repo root.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 import controllers  # noqa: E402
-
-# controllers.py uses sqrt() without importing it. Supply it here so this
-# script works without editing controllers.py; it does nothing if the import
-# is added there later.
-if not hasattr(controllers, "sqrt"):
-    print("NOTE: controllers.py does not import sqrt; using math.sqrt for this comparison.\n")
-    controllers.sqrt = math.sqrt
 
 
 # Output limits of the Saturation blocks in the Simulink model (wtj.slx).
@@ -63,7 +63,7 @@ def wtj_branch(r):
 def run_python(rows):
     """Run the controller classes from controllers.py, built with each row's parameters."""
     tg = np.array([
-        controllers.TimeGapController(alpha=r["alpha"], tau=r["tau"], gmin=r["gmin"], lam=r["lam"])
+        controllers.SpecialTimeGapController(alpha=r["alpha"], tau=r["tau"], gmin=r["gmin"], lam=r["lam"])
         .cmd_accel(r["sn"], r["vn"], r["sndot"])
         for r in rows
     ], dtype=float)
@@ -130,8 +130,9 @@ def main():
     rows = [{k: float(d[k]) for k in names} for d in np.atleast_1d(data)]
     tg_py, wtj_py = run_python(rows)
 
-    bad_tg = compare("timeGap", tg_py, data["timeGap_matlab"], rows, args.atol, args.rtol, args.show,
-                     branch_fn=timegap_branch)
+    tg_ml = np.clip(data["timeGap_matlab"], SIM_ACC_LOWER, SIM_ACC_UPPER)   # the block has no saturation
+    bad_tg = compare("timeGap (STG vs saturated Simulink block)", tg_py, tg_ml, rows, args.atol, args.rtol,
+                     args.show, branch_fn=timegap_branch)
     bad_wtj = compare("wtj", wtj_py, data["wtj_matlab"], rows, args.atol, args.rtol, args.show,
                       branch_fn=wtj_branch)
 

@@ -1,7 +1,7 @@
 [project]
 name = "wtj-multi-vehicle-sims"
 version = "0.1.0"
-description = "Add your description here"
+description = "Platoon simulations for developing the special time gap (STG) car-following controller, and the report"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [

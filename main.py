@@ -299,7 +299,7 @@ def main():
             for future in as_completed(futures):
                 record(*future.result())
 
-    print(f"Results in {RESULTS_DIR}. To plot: uv run plot_run.py (and plot_fd.py) [RUN ...]")
+    print(f"Results in {RESULTS_DIR}. Summary tables: uv run summarize.py --results {RESULTS_DIR}")
 
 
 if __name__ == "__main__":

@@ -37,9 +37,23 @@ import numpy as np
 from controllers import COMPARISON_CONTROLLERS, SMART_CONTROLLERS
 from density_flow import DEFAULT_DT, DEFAULT_DX, density_and_flow_for, throughput
 from run_io import marker_x_for
-from series import controller_of, is_unsafe, series_label
 
 ROOT = Path(__file__).parent
+
+
+def series_label(row):
+    """'WTJ3' for default parameters, else the run's controller_params, e.g. 'WTJ3 gmin=5'."""
+    params = row.get("controller_params") or "defaults"
+    return row["smart_controller"] if params == "defaults" else params
+
+
+def controller_of(label):
+    return label.split(" ", 1)[0]
+
+
+def is_unsafe(row):
+    """True for a run that finished but had a smart car inside the safe gap (collisions are handled apart)."""
+    return bool(row and row.get("unsafe")) and not row.get("collision")
 
 COLUMNS = ["source", "role", "controller", "penetration_rate", "status", "avg_positive_work",
            "flow_mean_veh_per_hr", "flow_median_veh_per_hr", "flow_p5_veh_per_hr", "flow_p95_veh_per_hr",
