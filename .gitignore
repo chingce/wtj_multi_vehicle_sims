@@ -15,3 +15,5 @@ timeseries.csv
 plots/
 report/figures/
 report.zip
+# The submission document's source (submitted as a PDF, not kept in the repository)
+report/main.tex

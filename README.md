@@ -7,6 +7,25 @@ Gap Controller*. It covers the design iteration, from the original WTJ controlle
 to the special time gap controller (STG), and the evaluation of the final
 controller against a plain time gap controller (TG).
 
+## Large-scale simulation assignment
+
+The submission document is a PDF, submitted separately. Its LaTeX source,
+`report/main.tex`, is kept out of the repository (git-ignored). The repository
+produces everything the document uses: the tables in `report/tables/` and the
+figures (see [Producing the report](#producing-the-report)). The document covers
+the items the assignment asks for:
+
+| Assignment item | Where |
+|---|---|
+| Commit hash | Section 1 of the report (filled in at submission) |
+| Files executed, with variations | Section 2 of the report; [Producing the report](#producing-the-report) below |
+| README location | `README.md`, at the repository root (this file) |
+| Architectures and parameters | Section 3 of the report; [Controllers](#controllers) below |
+| Run time and constraints | Section 4 of the report; [Run time and constraints](#run-time-and-constraints) below |
+| Important plots | Sections 5-6 of the report |
+| Final plans | Section 7 of the report |
+| Video | Section 8 of the report (filled in at submission) |
+
 ## Setup
 
 The project uses [uv](https://docs.astral.sh/uv/) and Python 3.14 (pinned in
@@ -17,15 +36,24 @@ uv sync
 ```
 
 This installs numpy, matplotlib and rosbags; reading bags needs no ROS install.
-Put the four lead-vehicle bags in `bags/` (they are git-ignored because of their
-size):
 
-| Bag | Report label | Throughput marker |
+### Lead-vehicle bags (not in the repository)
+
+The simulations need four ROS bag files of recorded lead-vehicle drives. They are
+**not included in this repository**, because each is 190-375 MB, more than
+GitHub's 100 MB file limit (`bags/*.bag` is git-ignored). Get them separately and
+put them in `bags/` under exactly these names. The scripts find each drive by its
+file name.
+
+| File in `bags/` | Report label | Throughput marker |
 |---|---|---|
-| `wtj_real_drive.bag` | WTJ real drive | 2,000 m |
 | `2025_10_29_20_50_04_2T3MWRFVXLW056972profacc_test.bag` | Stop-and-go test (2025-10-29) | 1,000 m |
 | `2026_10_29_14_31_02_2T3MWRFVXLW056972profaccradar.bag` | Stop-and-go (2026-10-29) | 1,000 m |
 | `2026_10_23_16_53_49_2T3MWRFVXLW056972profaccradar.bag` | Fast mixed (2026-10-23) | 10,000 m |
+| `wtj_real_drive.bag` | WTJ real drive | 2,000 m |
+
+The WTJ real drive bag must be renamed to `wtj_real_drive.bag`. Keep the other
+three under their original names, as listed.
 
 ## Producing the report
 
@@ -35,8 +63,8 @@ uv run final_model.py --results-dir C:/Users/me/wtj_results   # STG vs TG at tau
 uv run build_report.py                                        # report/figures + report.zip
 ```
 
-Upload `report.zip` to Overleaf with *New Project > Upload Project*, or compile
-`report/main.tex` locally.
+`build_report.py` needs the (untracked) `report/main.tex`. Upload `report.zip` to
+Overleaf with *New Project > Upload Project*, or compile `report/main.tex` locally.
 
 Both run scripts first run any simulations that are missing from the results
 folder, then write their output. You can give the folder with `--results-dir` or
@@ -44,10 +72,18 @@ the `WTJ_RESULTS_DIR` environment variable. A run matches when its full
 controller definition, bag, penetration rate, seed (7), fleet size (100) and base
 controller (IDM) are the same.
 
-From scratch, this is 708 simulations: about 1.5 hours on 8 cores and 75 GB of
-per-step data. Keep the results folder outside OneDrive. If the machine crashes,
-run the same command again: the damaged end of `runs.csv` is repaired, and only
-the missing simulations are run.
+### Run time and constraints
+
+- **Time:** from scratch, `iteration.py` runs all 708 simulations (44 controller
+  configurations × 4 drives × 4 penetration rates, plus 4 all-IDM baselines). On an
+  Intel i9-13900H (14 cores, 32 GB) running 8 at a time, this took 1 h 38 min.
+  `final_model.py` reuses those runs, and its figures take about a minute.
+- **Storage:** each run saves every vehicle's state at every step, about 100 MB, so
+  all the runs together take 74 GB. Keep the results folder outside the repository
+  and outside OneDrive.
+- **Collisions:** 38 runs stop at a collision and save only their `runs.csv` row.
+- **Crash recovery:** if the machine crashes, run the same command again. The
+  damaged end of `runs.csv` is repaired, and only the missing simulations are run.
 
 | Script | Writes |
 |---|---|
@@ -62,7 +98,7 @@ Useful options:
 - `--csv` also writes the data behind the tables and figures as CSV.
 
 `plots/`, `report/figures/` and `report.zip` are generated and git-ignored.
-`report/main.tex` and `report/tables/` are tracked.
+`report/main.tex` is git-ignored too. `report/tables/` is tracked.
 
 ## Controllers
 
@@ -145,7 +181,7 @@ Each run writes:
 | `build_report.py` | Assembles `report/` and `report.zip` for Overleaf |
 | `sweep_data.py` | Shared by both: matching runs in `runs.csv`, running missing ones, metrics |
 | `summarize.py` | Per-run metrics (work, flow, throughput, safety), and per-bag summary tables |
-| `report/main.tex` | The report; `report/tables/*.tex` are generated |
+| `report/tables/*.tex` | The report's tables, generated by `iteration.py` and `final_model.py` (the report source itself is not tracked) |
 | `main.py` | Command-line simulator: runs simulations and writes their CSVs |
 | `sim.py` | Platoon simulation |
 | `controllers.py` | IDM, TG, STG, WTJOriginal, WTJSoftLowerBound, and `PRESETS` |
